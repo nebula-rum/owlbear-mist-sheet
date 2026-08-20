@@ -1439,7 +1439,7 @@ async function boot() {
     });
     partyPlayers = await OBR.party.getPlayers();
 
-    OBR.room.onChange((meta) => {
+    OBR.room.onMetadataChange((meta) => {
       const changed = JSON.stringify(meta) !== JSON.stringify(roomMeta);
       roomMeta = meta;
       if (changed) renderApp();
