@@ -240,6 +240,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .btn.small { padding: 2px 7px; font-size: 0.75em; }
 .btn.danger { background: var(--weakness-soft); border-color: var(--weakness); color: var(--weakness); }
 .btn.ghost { background: transparent; box-shadow: none; }
+.btn.icon-only { display: flex; align-items: center; justify-content: center; padding: 4px 7px; }
 
 /* ---------- Theme Cards ---------- */
 
@@ -281,11 +282,13 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .theme-card.flipped .theme-face.front { pointer-events: none; }
 .theme-card.flipped .theme-face.back { pointer-events: auto; }
 
-.theme-face.color-amber { border-color: var(--amber); }
-.theme-face.color-teal { border-color: var(--teal); }
-.theme-face.color-violet { border-color: var(--violet); }
-.theme-face.color-rose { border-color: var(--rose); }
-.theme-face.color-sage { border-color: var(--sage); }
+/* Each Theme's front/back is tinted with a flat, muted version of its category color (the
+   same --*-soft tokens used elsewhere) — solid color, no gradient/fade. */
+.theme-face.color-amber { border-color: var(--amber); background: var(--amber-soft); }
+.theme-face.color-teal { border-color: var(--teal); background: var(--teal-soft); }
+.theme-face.color-violet { border-color: var(--violet); background: var(--violet-soft); }
+.theme-face.color-rose { border-color: var(--rose); background: var(--rose-soft); }
+.theme-face.color-sage { border-color: var(--sage); background: var(--sage-soft); }
 
 .theme-card-topline {
   display: flex;
@@ -410,16 +413,36 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .flip-btn:hover { background: rgba(58,44,28,0.18); }
 
-.theme-title-input {
+/* Theme title: wraps to a second line instead of clipping when it's longer than the card,
+   via the standard CSS-grid "replicated value" auto-grow trick (see renderThemeTitleField). */
+.theme-title-wrap {
+  display: grid;
   font-family: "Cinzel", Georgia, serif;
   font-weight: 700;
   font-size: 1.1em;
+  margin-bottom: 4px;
+}
+.theme-title-wrap::after {
+  content: attr(data-replicated-value) " ";
+  grid-area: 1 / 1 / 2 / 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  visibility: hidden;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+}
+.theme-title-wrap > .theme-title-input {
+  grid-area: 1 / 1 / 2 / 2;
+  font: inherit;
   width: 100%;
   border: none;
   background: transparent;
   border-bottom: 1px dashed var(--border-soft);
   padding: 2px 0;
-  margin-bottom: 4px;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .theme-type-input {
@@ -622,32 +645,91 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .check-toggle.checked { background: var(--sage); border-color: var(--sage); }
 
-.status-chip {
-  display: inline-flex;
+/* ---------- Active Tags (Tags + Statuses) ---------- */
+
+.title-buttons { display: flex; gap: 6px; flex-shrink: 0; }
+
+.active-tags-list { display: flex; flex-direction: column; gap: 8px; }
+
+.active-tag-chip {
+  display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--violet-soft);
-  border: 1px solid var(--violet);
+  border: 1px solid var(--border-soft);
   border-radius: 20px;
-  padding: 3px 4px 3px 10px;
-  font-size: 0.85em;
-  margin: 0 6px 6px 0;
+  padding: 5px 6px 5px 14px;
 }
-.status-chip .lvl {
-  background: var(--violet);
-  color: #fff;
+.active-tag-chip input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 0.95em;
+}
+.active-tag-chip.color-amber { background: var(--amber-soft); border-color: var(--amber); }
+.active-tag-chip.color-teal { background: var(--teal-soft); border-color: var(--teal); }
+.active-tag-chip.color-violet { background: var(--violet-soft); border-color: var(--violet); }
+.active-tag-chip.color-rose { background: var(--rose-soft); border-color: var(--rose); }
+.active-tag-chip.color-sage { background: var(--sage-soft); border-color: var(--sage); }
+
+.status-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.status-card.color-amber { background: var(--amber-soft); border-color: var(--amber); }
+.status-card.color-teal { background: var(--teal-soft); border-color: var(--teal); }
+.status-card.color-violet { background: var(--violet-soft); border-color: var(--violet); }
+.status-card.color-rose { background: var(--rose-soft); border-color: var(--rose); }
+.status-card.color-sage { background: var(--sage-soft); border-color: var(--sage); }
+
+.status-top-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.status-name-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.chip-trash {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--weakness);
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  font-size: 0.75em;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.status-list { display: flex; flex-wrap: wrap; }
+.chip-trash:hover { background: rgba(143,58,52,0.14); }
 
-.quint-row { display: flex; align-items: center; gap: 10px; }
-.quint-gems { display: flex; gap: 4px; font-size: 1.3em; letter-spacing: -2px; color: var(--accent); }
+.status-boxes { display: flex; gap: 5px; flex-wrap: wrap; }
+.status-box {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 2px solid var(--border);
+  background: rgba(255,255,255,0.55);
+  color: var(--ink-soft);
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.78em;
+  padding: 0;
+}
+.status-box.on { color: #fff; }
+.status-card.color-amber .status-box { border-color: var(--amber); color: var(--amber); }
+.status-card.color-amber .status-box.on { background: var(--amber); color: #fff; }
+.status-card.color-teal .status-box { border-color: var(--teal); color: var(--teal); }
+.status-card.color-teal .status-box.on { background: var(--teal); color: #fff; }
+.status-card.color-violet .status-box { border-color: var(--violet); color: var(--violet); }
+.status-card.color-violet .status-box.on { background: var(--violet); color: #fff; }
+.status-card.color-rose .status-box { border-color: var(--rose); color: var(--rose); }
+.status-card.color-rose .status-box.on { background: var(--rose); color: #fff; }
+.status-card.color-sage .status-box { border-color: var(--sage); color: var(--sage); }
+.status-card.color-sage .status-box.on { background: var(--sage); color: #fff; }
 
 .notes-text { width: 100%; min-height: 70px; }
 

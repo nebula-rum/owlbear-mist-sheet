@@ -44,7 +44,7 @@ Open `index.html` directly in a browser (or `python3 -m http.server`) to preview
 
 To run your own copy instead of using the hosted link above: fork this repo, enable GitHub Pages (Settings → Pages → Deploy from branch, `main` / root), then point Owlbear at `https://<you>.github.io/<repo>/owlbear-extension.json`.
 
-- **If it doesn't load:** GitHub Pages project repos serve under a subpath, not the domain root. Open `owlbear-extension.json` and change `icon`/`popover` from `/icon.svg` / `/index.html` to `/<repo>/icon.svg` / `/<repo>/index.html`, commit, then reinstall the extension.
-- Netlify Drop also works, but don't rename the manifest file to `manifest.json` — it 401s on Netlify. `owlbear-extension.json` is fine as-is.
+- `owlbear-extension.json`'s `icon`/`popover` paths are already set to `/owlbear-mist-sheet/icon.svg` and `/owlbear-mist-sheet/index.html`, matching this repo's name — GitHub Pages project repos serve under a `/<repo>/` subpath, not the domain root, so an unprefixed `/icon.svg` 404s. **If you rename or fork under a different repo name**, edit those two paths to match your actual repo name, commit, then reinstall the extension.
+- Netlify Drop also works, but don't rename the manifest file to `manifest.json` — it 401s on Netlify. `owlbear-extension.json` is fine as-is (and since Netlify serves from the domain root, change the two paths back to `/icon.svg` / `/index.html` there).
 
 PRs and forks welcome.

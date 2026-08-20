@@ -71,11 +71,18 @@ const LABELS = {
     backpackHint: "Click the square to mark an item used.",
     addItem: "+ Item",
     itemPlaceholder: "item…",
-    resourcePoolTitle: "Resource Pool",
-    statusesTitle: "Active Statuses",
+    removeItem: "Remove item",
+    removeItemConfirm: "Remove this item?",
+    activeTagsTitle: "Active Tags",
+    activeTagsHint: "Tags are simple markers — just a name. Statuses track tiers 1–6 — click any box to toggle it; tiers aren't always crossed off in order.",
+    addActiveTag: "+ Tag",
     addStatus: "+ Status",
+    activeTagPlaceholder: "tag",
     statusPlaceholder: "status",
-    statusLevelHint: "Click to raise, shift+click to lower",
+    removeActiveTag: "Remove tag",
+    removeActiveTagConfirm: "Remove this tag?",
+    removeStatus: "Remove status",
+    removeStatusConfirm: "Remove this status?",
     notesTitle: "Notes",
     notesPlaceholder: "Free-form notes…",
 
@@ -90,6 +97,8 @@ const LABELS = {
     defaultCategory1: "Origin",
     defaultCategory2: "Adventure",
     defaultCategory3: "Greatness",
+    tagColorLabel: "Tag color",
+    statusColorLabel: "Status color",
 
     companyThemeTitle: "Company Theme",
     companyHintGm: "Shared by the whole party. As GM you can edit everything here; players can only cross a tag off when their Hero activates it.",
@@ -162,11 +171,18 @@ const LABELS = {
     backpackHint: "Clicca il quadrato per barrare un oggetto usato.",
     addItem: "+ Oggetto",
     itemPlaceholder: "oggetto…",
-    resourcePoolTitle: "Riserva",
-    statusesTitle: "Stati Attivi",
+    removeItem: "Rimuovi oggetto",
+    removeItemConfirm: "Rimuovere questo oggetto?",
+    activeTagsTitle: "Tag Attivi",
+    activeTagsHint: "I Tag sono semplici indicatori — solo un nome. Gli Stati tracciano livelli 1–6 — clicca una casella per attivarla/disattivarla; i livelli non vengono sempre barrati in ordine.",
+    addActiveTag: "+ Tag",
     addStatus: "+ Stato",
+    activeTagPlaceholder: "tag",
     statusPlaceholder: "stato",
-    statusLevelHint: "Clicca per aumentare, shift+clicca per diminuire",
+    removeActiveTag: "Rimuovi tag",
+    removeActiveTagConfirm: "Rimuovere questo tag?",
+    removeStatus: "Rimuovi stato",
+    removeStatusConfirm: "Rimuovere questo stato?",
     notesTitle: "Note",
     notesPlaceholder: "Appunti liberi…",
 
@@ -181,6 +197,8 @@ const LABELS = {
     defaultCategory1: "Origine",
     defaultCategory2: "Avventura",
     defaultCategory3: "Grandezza",
+    tagColorLabel: "Colore Tag",
+    statusColorLabel: "Colore Stato",
 
     companyThemeTitle: "Tema della Compagnia",
     companyHintGm: "Condiviso da tutta la Compagnia. Come Narratore puoi modificare tutto qui; i giocatori possono solo barrare un Attributo quando il loro Eroe lo attiva.",
@@ -320,6 +338,32 @@ function expandIcon() {
   );
 }
 
+function trashIcon() {
+  return svgIcon(
+    [
+      ["polyline", { points: "3 6 5 6 21 6" }],
+      ["path", { d: "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" }],
+      ["path", { d: "M10 11v6" }],
+      ["path", { d: "M14 11v6" }],
+      ["path", { d: "M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" }],
+    ],
+    { size: 14, strokeWidth: 2 }
+  );
+}
+
+// Three diagonal claw-scratch marks — the Legend in the Mist book's Power tag icon, used in
+// place of a generic "sword" glyph for an unburned Power tag.
+function clawIcon() {
+  return svgIcon(
+    [
+      ["line", { x1: "5", y1: "19", x2: "9", y2: "5" }],
+      ["line", { x1: "10", y1: "19", x2: "13", y2: "5" }],
+      ["line", { x1: "15", y1: "19", x2: "18", y2: "5" }],
+    ],
+    { size: 13, strokeWidth: 2.3 }
+  );
+}
+
 function collapseIcon() {
   return svgIcon(
     [
@@ -427,6 +471,11 @@ function defaultCampaign() {
       defaultCategory(t("defaultCategory2"), "amber"),
       defaultCategory(t("defaultCategory3"), "violet"),
     ],
+    // Tag/Status boxes are colored independently from Theme categories — brown-ish amber for
+    // Tags, green sage for Statuses by default, echoing Otherscape/Legend in the Mist's own
+    // palette, but the GM can repick either from the same 5-color set used for categories.
+    tagColor: "amber",
+    statusColor: "sage",
   };
 }
 
@@ -440,10 +489,21 @@ function normalizeCampaign(raw) {
           color: cat && COLOR_KEYS.includes(cat.color) ? cat.color : "amber",
         }))
       : defaultCampaign().themeCategories,
+    tagColor: raw && COLOR_KEYS.includes(raw.tagColor) ? raw.tagColor : "amber",
+    statusColor: raw && COLOR_KEYS.includes(raw.statusColor) ? raw.statusColor : "sage",
   };
 }
 
 function getCampaign() {
+  // defaultCampaign() mints fresh random category ids every call — without this write-through,
+  // a category picked before the GM ever opens Settings (which is the only place that used to
+  // persist the campaign) would stop matching on the very next render, since a later getCampaign()
+  // call would silently generate a different set of ids. Persist the very first default so ids
+  // stay stable from the moment a room is created.
+  if (!roomMeta[ROOM_KEYS.campaign]) {
+    roomMeta[ROOM_KEYS.campaign] = defaultCampaign();
+    scheduleRoomSave(ROOM_KEYS.campaign);
+  }
   return normalizeCampaign(roomMeta[ROOM_KEYS.campaign]);
 }
 
@@ -504,10 +564,26 @@ function defaultCharacter(id) {
     background: "",
     themes: [],
     backpack: [],
-    resourcePool: 0,
+    tags: [],
     statuses: [],
     notes: "",
   };
+}
+
+// A Status's 6 tiers can be crossed off out of order (per the rules, a Status doesn't always
+// fill/empty its boxes strictly left-to-right), so each box is its own independent boolean
+// rather than a single "filled up to N" counter like a Theme track.
+function normalizeStatus(raw) {
+  const id = raw && raw.id ? raw.id : uid();
+  const name = raw && typeof raw.name === "string" ? raw.name : "";
+  if (raw && Array.isArray(raw.boxes)) {
+    const boxes = raw.boxes.slice(0, 6).map(Boolean);
+    while (boxes.length < 6) boxes.push(false);
+    return { id, name, boxes };
+  }
+  // Migrate the old {level: N} shape (a simple 1..N counter) into boxes 1..N filled.
+  const legacyLevel = raw && typeof raw.level === "number" ? raw.level : 0;
+  return { id, name, boxes: Array.from({ length: 6 }, (_, i) => i < legacyLevel) };
 }
 
 function normalizeCharacter(raw, id) {
@@ -515,7 +591,10 @@ function normalizeCharacter(raw, id) {
   c.background = typeof c.background === "string" ? c.background : "";
   c.themes = Array.isArray(c.themes) ? c.themes : [];
   c.backpack = Array.isArray(c.backpack) ? c.backpack : [];
-  c.statuses = Array.isArray(c.statuses) ? c.statuses : [];
+  c.tags = Array.isArray(c.tags)
+    ? c.tags.map((tg) => ({ id: tg && tg.id ? tg.id : uid(), text: tg && typeof tg.text === "string" ? tg.text : "" }))
+    : [];
+  c.statuses = Array.isArray(c.statuses) ? c.statuses.map(normalizeStatus) : [];
   c.themes.forEach((th) => {
     th.power = Array.isArray(th.power) ? th.power : [];
     th.weakness = Array.isArray(th.weakness) ? th.weakness : [];
@@ -788,8 +867,7 @@ function renderCharacterSheet(character, save) {
   wrap.appendChild(themesSection);
 
   wrap.appendChild(renderBackpackSection(character, save));
-  wrap.appendChild(renderResourcePoolSection(character, save));
-  wrap.appendChild(renderStatusesSection(character, save));
+  wrap.appendChild(renderActiveTagsSection(character, save));
   wrap.appendChild(renderNotesSection(character, save));
 
   return wrap;
@@ -900,6 +978,31 @@ function renderCategoryPicker(theme, save, rerender) {
   return el("div", { class: "category-picker" }, [select]);
 }
 
+// A Theme title needs to wrap onto a second line instead of clipping when it's longer than the
+// card width. A plain <input> can't wrap, so this uses the standard CSS-grid "replicated value"
+// auto-grow trick: a hidden ::after with the same text drives the grid row's height, and the
+// real <textarea> (which does wrap) sits on top of it — no JS height-measuring needed.
+function renderThemeTitleField(theme, save) {
+  const wrap = el("div", { class: "theme-title-wrap", "data-replicated-value": theme.title || "" });
+  wrap.appendChild(
+    el(
+      "textarea",
+      {
+        class: "theme-title-input",
+        rows: "1",
+        placeholder: t("themeTitlePlaceholder"),
+        oninput: (e) => {
+          theme.title = e.target.value;
+          wrap.setAttribute("data-replicated-value", e.target.value);
+          save();
+        },
+      },
+      theme.title
+    )
+  );
+  return wrap;
+}
+
 function renderThemeFront(character, save, theme, cardNode) {
   const face = el("div", { class: "theme-face front " + categoryColorClass(theme.categoryId) });
 
@@ -909,30 +1012,23 @@ function renderThemeFront(character, save, theme, cardNode) {
   const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
   flipBtn.appendChild(flipIcon());
   actions.appendChild(flipBtn);
-  actions.appendChild(
-    el("button", {
-      class: "btn danger small",
-      text: t("removeTheme"),
-      onclick: () => {
-        if (!confirm(t("removeThemeConfirm"))) return;
-        character.themes = character.themes.filter((th) => th.id !== theme.id);
-        save();
-        refreshTabContent();
-      },
-    })
-  );
+  const deleteBtn = el("button", {
+    class: "btn danger small icon-only",
+    title: t("removeTheme"),
+    "aria-label": t("removeTheme"),
+    onclick: () => {
+      if (!confirm(t("removeThemeConfirm"))) return;
+      character.themes = character.themes.filter((th) => th.id !== theme.id);
+      save();
+      refreshTabContent();
+    },
+  });
+  deleteBtn.appendChild(trashIcon());
+  actions.appendChild(deleteBtn);
   topRow.appendChild(actions);
   face.appendChild(topRow);
 
-  face.appendChild(
-    el("input", {
-      class: "theme-title-input",
-      type: "text",
-      placeholder: t("themeTitlePlaceholder"),
-      value: theme.title,
-      oninput: (e) => { theme.title = e.target.value; save(); },
-    })
-  );
+  face.appendChild(renderThemeTitleField(theme, save));
 
   face.appendChild(
     el("input", {
@@ -1012,7 +1108,7 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
     } else if (kind === "weakness") {
       flameBtn.appendChild(chevronsDownIcon());
     } else {
-      flameBtn.textContent = "⚔";
+      flameBtn.appendChild(clawIcon());
     }
     pill.appendChild(flameBtn);
 
@@ -1177,7 +1273,9 @@ function renderBackpackSection(character, save) {
       el("button", {
         class: "tag-remove",
         text: "✕",
+        title: t("removeItem"),
         onclick: () => {
+          if (!confirm(t("removeItemConfirm"))) return;
           character.backpack = character.backpack.filter((i) => i.id !== item.id);
           save();
           refreshTabContent();
@@ -1190,85 +1288,118 @@ function renderBackpackSection(character, save) {
   return section;
 }
 
-// ---------- Resource Pool ----------
+// ---------- Active Tags (Tags + Statuses) ----------
+// Two different item kinds sharing one section: a Tag is just a name (no counter — a simple
+// marker like "high ground"), a Status has 6 numbered boxes that toggle independently (tiers
+// aren't always crossed off in order, per the rules). Each kind gets its own GM-configurable
+// color (campaign.tagColor / campaign.statusColor), set on the Settings tab.
 
-function renderResourcePoolSection(character, save) {
+function renderActiveTagsSection(character, save) {
+  const campaign = getCampaign();
+  const tagColorClass = "color-" + campaign.tagColor;
+  const statusColorClass = "color-" + campaign.statusColor;
+
   const section = el("div", { class: "section" });
-  section.appendChild(el("div", { class: "section-title" }, [el("span", { text: t("resourcePoolTitle") })]));
-  const row = el("div", { class: "quint-row" });
-  row.appendChild(
-    el("button", { class: "btn small", text: "−", onclick: () => {
-      character.resourcePool = Math.max(0, character.resourcePool - 1);
+
+  const addTagBtn = el("button", {
+    class: "btn small add-btn",
+    text: t("addActiveTag"),
+    onclick: () => {
+      character.tags.push({ id: uid(), text: "" });
       save();
       refreshTabContent();
-    } })
-  );
-  row.appendChild(el("span", { class: "quint-gems", text: "◆".repeat(character.resourcePool) || "—" }));
-  row.appendChild(
-    el("button", { class: "btn small", text: "+", onclick: () => {
-      character.resourcePool += 1;
+    },
+  });
+  const addStatusBtn = el("button", {
+    class: "btn small add-btn",
+    text: t("addStatus"),
+    onclick: () => {
+      character.statuses.push({ id: uid(), name: "", boxes: [false, false, false, false, false, false] });
       save();
       refreshTabContent();
-    } })
-  );
-  section.appendChild(row);
-  return section;
-}
-
-// ---------- Statuses ----------
-
-function renderStatusesSection(character, save) {
-  const section = el("div", { class: "section" });
+    },
+  });
   section.appendChild(
     el("div", { class: "section-title" }, [
-      el("span", { text: t("statusesTitle") }),
-      el("button", {
-        class: "btn small add-btn",
-        text: t("addStatus"),
-        onclick: () => {
-          character.statuses.push({ id: uid(), name: "", level: 1 });
-          save();
-          refreshTabContent();
-        },
-      }),
+      el("span", { text: t("activeTagsTitle") }),
+      el("div", { class: "title-buttons" }, [addTagBtn, addStatusBtn]),
     ])
   );
-  const list = el("div", { class: "status-list" });
-  character.statuses.forEach((s) => {
-    const chip = el("div", { class: "status-chip" });
+  section.appendChild(el("div", { class: "hint" }, t("activeTagsHint")));
+
+  const list = el("div", { class: "active-tags-list" });
+
+  character.tags.forEach((tag) => {
+    const chip = el("div", { class: "active-tag-chip " + tagColorClass });
     chip.appendChild(
       el("input", {
         type: "text",
+        value: tag.text,
+        placeholder: t("activeTagPlaceholder"),
+        oninput: (e) => { tag.text = e.target.value; save(); },
+      })
+    );
+    const trash = el("button", {
+      class: "chip-trash",
+      title: t("removeActiveTag"),
+      "aria-label": t("removeActiveTag"),
+      onclick: () => {
+        if (!confirm(t("removeActiveTagConfirm"))) return;
+        character.tags = character.tags.filter((tg) => tg.id !== tag.id);
+        save();
+        refreshTabContent();
+      },
+    });
+    trash.appendChild(trashIcon());
+    chip.appendChild(trash);
+    list.appendChild(chip);
+  });
+
+  character.statuses.forEach((s) => {
+    const card = el("div", { class: "status-card " + statusColorClass });
+    const topRow = el("div", { class: "status-top-row" });
+    topRow.appendChild(
+      el("input", {
+        type: "text",
+        class: "status-name-input",
         value: s.name,
         placeholder: t("statusPlaceholder"),
         oninput: (e) => { s.name = e.target.value; save(); },
       })
     );
-    chip.appendChild(
-      el("button", {
-        class: "lvl",
-        text: String(s.level),
-        title: t("statusLevelHint"),
-        onclick: (e) => {
-          s.level = e.shiftKey ? Math.max(1, s.level - 1) : s.level + 1;
-          save();
-          refreshTabContent();
-        },
-      })
-    );
-    chip.appendChild(
-      el("button", {
-        class: "tag-remove",
-        text: "✕",
-        onclick: () => {
-          character.statuses = character.statuses.filter((x) => x.id !== s.id);
-          save();
-          refreshTabContent();
-        },
-      })
-    );
-    list.appendChild(chip);
+    const trash = el("button", {
+      class: "chip-trash",
+      title: t("removeStatus"),
+      "aria-label": t("removeStatus"),
+      onclick: () => {
+        if (!confirm(t("removeStatusConfirm"))) return;
+        character.statuses = character.statuses.filter((x) => x.id !== s.id);
+        save();
+        refreshTabContent();
+      },
+    });
+    trash.appendChild(trashIcon());
+    topRow.appendChild(trash);
+    card.appendChild(topRow);
+
+    const boxesRow = el("div", { class: "status-boxes" });
+    s.boxes.forEach((on, i) => {
+      boxesRow.appendChild(
+        el("button", {
+          class: "status-box" + (on ? " on" : ""),
+          text: String(i + 1),
+          onclick: () => {
+            s.boxes[i] = !s.boxes[i];
+            save();
+            refreshTabContent();
+          },
+        })
+      );
+    });
+    card.appendChild(boxesRow);
+    list.appendChild(card);
   });
+
   section.appendChild(list);
   return section;
 }
@@ -1541,6 +1672,22 @@ function renderSettingsTab() {
     rows.appendChild(row);
   });
   wrap.appendChild(rows);
+
+  const campaign = getCampaign();
+  wrap.appendChild(el("label", { class: "field-label", text: t("tagColorLabel") }));
+  wrap.appendChild(
+    renderColorSwatchPicker(campaign.tagColor, (c) => {
+      updateCampaign((camp) => { camp.tagColor = c; });
+      refreshTabContent();
+    })
+  );
+  wrap.appendChild(el("label", { class: "field-label", text: t("statusColorLabel") }));
+  wrap.appendChild(
+    renderColorSwatchPicker(campaign.statusColor, (c) => {
+      updateCampaign((camp) => { camp.statusColor = c; });
+      refreshTabContent();
+    })
+  );
 
   return wrap;
 }

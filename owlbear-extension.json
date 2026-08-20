@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "manifest_version": 1,
   "action": {
-    "title": "Hero Sheet",
+    "title": "Hero Sheet (Mist Engine)",
     "icon": "/owlbear-mist-sheet/icon.svg",
     "popover": "/owlbear-mist-sheet/index.html",
     "height": 760,
