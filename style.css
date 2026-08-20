@@ -135,6 +135,29 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .lang-toggle:hover { background: rgba(242,230,201,0.22); }
 
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.icon-btn {
+  flex-shrink: 0;
+  background: rgba(242,230,201,0.1);
+  border: 1px solid rgba(242,230,201,0.35);
+  color: var(--parchment);
+  border-radius: 6px;
+  padding: 3px 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  font-size: 0.72em;
+  line-height: 1;
+}
+.icon-btn:hover { background: rgba(242,230,201,0.22); }
+
 .role-badge {
   display: inline-block;
   font-family: "Cinzel", Georgia, serif;
@@ -221,8 +244,8 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 /* ---------- Theme Cards ---------- */
 
 .themes-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
 }
 
@@ -268,11 +291,15 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   margin-bottom: 6px;
 }
-.theme-card-topline.flip-only {
-  justify-content: flex-end;
-  margin-bottom: 2px;
+
+.theme-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .color-picker {
@@ -301,7 +328,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-bottom: 8px;
+  min-width: 0;
 }
 .category-select {
   font-family: "Cinzel", Georgia, serif;
@@ -375,8 +402,10 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   border-radius: 50%;
   width: 26px;
   height: 26px;
-  font-size: 0.85em;
-  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--ink-soft);
 }
 .flip-btn:hover { background: rgba(58,44,28,0.18); }
@@ -474,15 +503,26 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .tag-remove:hover { color: var(--weakness); }
 
-.add-tag-btn {
-  border: 1px dashed var(--border-soft);
-  background: transparent;
-  border-radius: 20px;
-  padding: 3px 10px;
-  font-size: 0.8em;
+.tag-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 3px;
+}
+.tag-section-header .field-label { margin: 0; }
+.tag-add-inline {
+  flex-shrink: 0;
+  border: none;
+  background: rgba(58,44,28,0.08);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 0.85em;
+  line-height: 1;
   color: var(--ink-soft);
 }
-.add-tag-btn:hover { border-color: var(--accent); color: var(--ink); }
+.tag-add-inline:hover { background: rgba(58,44,28,0.18); color: var(--ink); }
 
 /* tracks */
 .track-block {
@@ -537,11 +577,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   width: 100%;
   min-height: 60px;
   font-size: 0.85em;
-}
-
-.theme-footer {
-  margin-top: 10px;
-  text-align: right;
 }
 
 .add-theme-card {
@@ -614,9 +649,13 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .quint-row { display: flex; align-items: center; gap: 10px; }
 .quint-gems { display: flex; gap: 4px; font-size: 1.3em; letter-spacing: -2px; color: var(--accent); }
 
-.vow-toggle-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.85em; }
-
 .notes-text { width: 100%; min-height: 70px; }
+
+/* ---------- Background (collapsible character story) ---------- */
+
+.background-section { margin-top: -8px; }
+.background-toggle { color: var(--ink-soft); }
+.background-text { width: 100%; min-height: 70px; font-size: 0.88em; margin-top: 6px; }
 
 /* ---------- Empty states ---------- */
 

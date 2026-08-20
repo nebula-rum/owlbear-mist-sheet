@@ -1,6 +1,7 @@
 import OBR from "./obr-sdk.bundle.js";
 
 const LANG_KEY = "mist-hero-sheet-lang";
+const FONT_SCALE_KEY = "mist-hero-sheet-font-scale";
 const COLOR_KEYS = ["amber", "teal", "violet", "rose", "sage"];
 
 // Room metadata keys — everything lives in shared OBR room metadata now (not per-player
@@ -15,44 +16,55 @@ function characterKey(id) {
 }
 const LOCAL_ROOM_KEY = "mist-hero-sheet-room"; // standalone/local-preview fallback
 
+// The "expanded view" is the same app loaded a second time in a bigger surface (an Owlbear
+// Modal, or — outside Owlbear — a plain popup window), so 4 Theme cards can sit side by side
+// instead of stacked. This query param is how that second load recognizes itself.
+const MODAL_ID = "com.mistengine.hero-sheet/expanded-modal";
+const isModalView = new URLSearchParams(window.location.search).get("view") === "expanded";
+
 // ---------- localization ----------
 
 const LABELS = {
   en: {
     standaloneBanner: "Local preview mode (not connected to Owlbear Rodeo) — data is saved only in this browser.",
     footer: "Mist Engine — Hero Sheet · built for Owlbear Rodeo",
-    tabSheet: "My Sheet",
+    tabSheet: "Hero",
     tabCompany: "Company",
     tabRoster: "Roster",
     tabSettings: "Settings",
     playerLabel: "Player: ",
     roleNarrator: "Narrator",
     langToggleTitle: "Switch to Italian",
+    fontDecreaseTitle: "Decrease text size",
+    fontIncreaseTitle: "Increase text size",
+    expandViewTitle: "Open larger view",
+    collapseViewTitle: "Close larger view",
 
     characterNamePlaceholder: "Character Name",
+    backgroundTitle: "Background",
+    backgroundPlaceholder: "Write your character's story…",
     themesTitle: "Themes",
-    themesHint: "Click ↻ to flip the card and see its Tracks.",
     addTheme: (n) => `+ Add Theme (${n}/4)`,
     themeTitlePlaceholder: "Theme Name",
     themeTypePlaceholder: "Type (e.g. Identity, Role, Community…)",
-    questionLabel: "Theme Question",
+    questionLabel: "Quest",
     questionPlaceholder: "Your Drive / Your Truth / Your Home / Your Question…",
-    powerLabel: "⚔ Power Tags (click the icon to burn)",
-    weaknessLabel: "🩹 Weakness Tag",
-    addPower: "+ tag",
-    addWeakness: "+ weakness",
+    powerLabel: "Power Tags",
+    weaknessLabel: "Weakness Tag",
+    addPower: "Add tag",
+    addWeakness: "Add weakness tag",
     powerPlaceholder: "tag",
     weaknessPlaceholder: "weakness tag",
     burnTitle: "Burn this tag",
     restoreTitle: "Restore this tag",
-    removeTheme: "Remove Theme",
+    removeTheme: "Delete",
     removeThemeConfirm: "Remove this Theme?",
     flipTitle: "Flip the card",
     tracksTitle: "Tracks",
-    addTrack: "+ Add Track",
-    defaultTrackLabel: "Improve",
-    newTrackLabel: "New Track",
-    trackRemoveTitle: "Remove track",
+    trackLabelAbandon: "Abandon",
+    trackLabelImprove: "Improve",
+    trackLabelAdvance: "Advance",
+    defaultTrackLabel: "Track",
     specialLabel: "Special Upgrades",
     specialPlaceholder: "Upgrades unlocked for this Theme…",
     backpackTitle: "Backpack",
@@ -64,9 +76,6 @@ const LABELS = {
     addStatus: "+ Status",
     statusPlaceholder: "status",
     statusLevelHint: "Click to raise, shift+click to lower",
-    specialTrackTitle: "Special Track (optional)",
-    specialTrackToggle: "Enabled",
-    specialTrackHint: "Extra track some tables use for endgame / legendary character arcs — check your table's rules.",
     notesTitle: "Notes",
     notesPlaceholder: "Free-form notes…",
 
@@ -87,8 +96,8 @@ const LABELS = {
     companyHintPlayer: "Shared by the whole party. Your GM edits this card; you can still cross off a tag when your Hero activates it.",
     companyMissionLabel: "Mission",
     companyMissionPlaceholder: "What is the Company striving for, together?",
-    companyPowerLabel: "⚔ Power Tags",
-    companyWeaknessLabel: "🩹 Weakness Tag",
+    companyPowerLabel: "Power Tags",
+    companyWeaknessLabel: "Weakness Tag",
     companyCrossTitle: "Mark this tag used",
     companyRestoreTitle: "Restore this tag",
 
@@ -110,38 +119,43 @@ const LABELS = {
   it: {
     standaloneBanner: "Modalità anteprima locale (non collegata a Owlbear Rodeo) — i dati sono salvati solo in questo browser.",
     footer: "Mist Engine — Scheda Eroe · creata per Owlbear Rodeo",
-    tabSheet: "La Mia Scheda",
+    tabSheet: "Eroe",
     tabCompany: "Compagnia",
     tabRoster: "Personaggi",
     tabSettings: "Impostazioni",
     playerLabel: "Giocatore: ",
     roleNarrator: "Narratore",
     langToggleTitle: "Switch to English",
+    fontDecreaseTitle: "Riduci dimensione testo",
+    fontIncreaseTitle: "Aumenta dimensione testo",
+    expandViewTitle: "Apri vista grande",
+    collapseViewTitle: "Chiudi vista grande",
 
     characterNamePlaceholder: "Nome dell'Eroe",
+    backgroundTitle: "Background",
+    backgroundPlaceholder: "Scrivi la storia del tuo personaggio…",
     themesTitle: "Temi",
-    themesHint: "Clicca ↻ per girare la carta e vedere le Tracce.",
     addTheme: (n) => `+ Aggiungi Tema (${n}/4)`,
     themeTitlePlaceholder: "Nome del Tema",
     themeTypePlaceholder: "Tipo (es. Identità, Ruolo, Comunità…)",
-    questionLabel: "Domanda del Tema",
+    questionLabel: "Quest",
     questionPlaceholder: "Il Tuo Desiderio / la Tua Verità / la Tua Casa / la Tua Domanda…",
-    powerLabel: "⚔ Attributi di Forza (clicca l'icona per bruciare)",
-    weaknessLabel: "🩹 Attributo di Debolezza",
-    addPower: "+ attributo",
-    addWeakness: "+ debolezza",
+    powerLabel: "Attributi di Forza",
+    weaknessLabel: "Attributo di Debolezza",
+    addPower: "Aggiungi attributo",
+    addWeakness: "Aggiungi debolezza",
     powerPlaceholder: "attributo",
     weaknessPlaceholder: "attributo di debolezza",
     burnTitle: "Brucia questo attributo",
     restoreTitle: "Ripristina questo attributo",
-    removeTheme: "Rimuovi Tema",
+    removeTheme: "Elimina",
     removeThemeConfirm: "Rimuovere questo Tema?",
     flipTitle: "Gira la carta",
     tracksTitle: "Tracce",
-    addTrack: "+ Aggiungi Traccia",
-    defaultTrackLabel: "Miglioria",
-    newTrackLabel: "Nuova Traccia",
-    trackRemoveTitle: "Rimuovi traccia",
+    trackLabelAbandon: "Abbandono",
+    trackLabelImprove: "Miglioria",
+    trackLabelAdvance: "Avanzamento",
+    defaultTrackLabel: "Traccia",
     specialLabel: "Miglioramenti Speciali",
     specialPlaceholder: "Miglioramenti sbloccati per questo Tema…",
     backpackTitle: "Zaino",
@@ -153,9 +167,6 @@ const LABELS = {
     addStatus: "+ Stato",
     statusPlaceholder: "stato",
     statusLevelHint: "Clicca per aumentare, shift+clicca per diminuire",
-    specialTrackTitle: "Traccia Speciale (opzionale)",
-    specialTrackToggle: "Attivata",
-    specialTrackHint: "Traccia extra opzionale che alcuni tavoli usano per archi narrativi finali/leggendari — verifica le regole del tuo tavolo.",
     notesTitle: "Note",
     notesPlaceholder: "Appunti liberi…",
 
@@ -176,8 +187,8 @@ const LABELS = {
     companyHintPlayer: "Condiviso da tutta la Compagnia. Questa carta è modificata dal tuo Narratore; puoi comunque barrare un Attributo quando il tuo Eroe lo attiva.",
     companyMissionLabel: "Missione",
     companyMissionPlaceholder: "Qual è l'obiettivo della Compagnia, insieme?",
-    companyPowerLabel: "⚔ Attributi di Forza",
-    companyWeaknessLabel: "🩹 Attributo di Debolezza",
+    companyPowerLabel: "Attributi di Forza",
+    companyWeaknessLabel: "Attributo di Debolezza",
     companyCrossTitle: "Barra questo attributo",
     companyRestoreTitle: "Ripristina questo attributo",
 
@@ -211,6 +222,116 @@ function setLang(newLang) {
   renderApp();
 }
 
+// ---------- font size scaling (per-browser, everyone picks their own) ----------
+
+const FONT_SCALE_STEPS = [13, 15, 17, 19, 21]; // px; index 1 (15px) matches the original default
+let fontScaleIndex = (() => {
+  const saved = parseInt(localStorage.getItem(FONT_SCALE_KEY), 10);
+  return Number.isInteger(saved) && saved >= 0 && saved < FONT_SCALE_STEPS.length ? saved : 1;
+})();
+
+function applyFontScale() {
+  document.documentElement.style.fontSize = FONT_SCALE_STEPS[fontScaleIndex] + "px";
+}
+
+function adjustFontScale(delta) {
+  fontScaleIndex = Math.max(0, Math.min(FONT_SCALE_STEPS.length - 1, fontScaleIndex + delta));
+  localStorage.setItem(FONT_SCALE_KEY, String(fontScaleIndex));
+  applyFontScale();
+}
+
+applyFontScale();
+
+// ---------- expanded view (Owlbear Modal / popup window) ----------
+
+function openExpandedView() {
+  if (backend === "obr") {
+    // Build an already-absolute URL ourselves: Owlbear's SDK resolves a relative "url" by
+    // concatenating its own origin with the string with NO separator inserted, which breaks
+    // on any site not hosted at the domain root (e.g. a GitHub Pages project repo). Passing
+    // a full "https://…" URL sidesteps that entirely, and works regardless of where this is
+    // deployed.
+    const url = window.location.origin + window.location.pathname + "?view=expanded";
+    OBR.modal.open({ id: MODAL_ID, url, width: 1180, height: 820 });
+  } else {
+    window.open(window.location.pathname + "?view=expanded", "mist-hero-sheet-expanded", "width=1180,height=820");
+  }
+}
+
+function closeExpandedView() {
+  if (backend === "obr") {
+    OBR.modal.close(MODAL_ID);
+  } else {
+    window.close();
+  }
+}
+
+// ---------- tiny inline icons (SVG, not emoji/unicode glyphs — legible in every font) ----------
+
+function svgIcon(parts, opts = {}) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", opts.viewBox || "0 0 24 24");
+  svg.setAttribute("width", String(opts.size || 16));
+  svg.setAttribute("height", String(opts.size || 16));
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", String(opts.strokeWidth || 2.2));
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  parts.forEach(([tagName, attrs]) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+    Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+    svg.appendChild(node);
+  });
+  return svg;
+}
+
+function flipIcon() {
+  return svgIcon(
+    [
+      ["polyline", { points: "17 1 21 5 17 9" }],
+      ["path", { d: "M3 11V9a4 4 0 0 1 4-4h14" }],
+      ["polyline", { points: "7 23 3 19 7 15" }],
+      ["path", { d: "M21 13v2a4 4 0 0 1-4 4H3" }],
+    ],
+    { size: 15, strokeWidth: 2.3 }
+  );
+}
+
+function chevronsDownIcon() {
+  return svgIcon(
+    [
+      ["polyline", { points: "6 4 12 10 18 4" }],
+      ["polyline", { points: "6 13 12 19 18 13" }],
+    ],
+    { size: 13, strokeWidth: 2.6 }
+  );
+}
+
+function expandIcon() {
+  return svgIcon(
+    [
+      ["polyline", { points: "15 3 21 3 21 9" }],
+      ["polyline", { points: "9 21 3 21 3 15" }],
+      ["line", { x1: "21", y1: "3", x2: "14", y2: "10" }],
+      ["line", { x1: "3", y1: "21", x2: "10", y2: "14" }],
+    ],
+    { size: 14, strokeWidth: 2.2 }
+  );
+}
+
+function collapseIcon() {
+  return svgIcon(
+    [
+      ["polyline", { points: "4 14 10 14 10 20" }],
+      ["polyline", { points: "20 10 14 10 14 4" }],
+      ["line", { x1: "14", y1: "10", x2: "21", y2: "3" }],
+      ["line", { x1: "10", y1: "14", x2: "3", y2: "21" }],
+    ],
+    { size: 14, strokeWidth: 2.2 }
+  );
+}
+
 // ---------- session state ----------
 
 let backend = "standalone"; // "obr" | "standalone"
@@ -218,8 +339,9 @@ let selfId = "local";
 let selfName = "";
 let selfRole = "PLAYER";
 let activeTab = "sheet";
-let activeCharacterId = null; // which accessible character "My Sheet" is currently showing
+let activeCharacterId = null; // which accessible character "Hero" is currently showing
 let expandedRosterId = null; // which character is expanded in the Roster tab (one at a time)
+const expandedBackgroundIds = new Set(); // which characters have their Background box open
 let partyPlayers = []; // [{id, name, role, metadata}] — everyone except self
 
 function isGM() {
@@ -337,11 +459,6 @@ function categoryColorClass(categoryId) {
   return cat ? "color-" + cat.color : "no-category";
 }
 
-function categoryLabel(categoryId) {
-  const cat = getCampaign().themeCategories.find((c) => c.id === categoryId);
-  return cat ? cat.label || t("unnamedCategory") : null;
-}
-
 function pickUnusedColor() {
   const used = new Set(getCampaign().themeCategories.map((c) => c.color));
   return COLOR_KEYS.find((c) => !used.has(c)) || COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
@@ -351,6 +468,18 @@ function pickUnusedColor() {
 
 function defaultTrack(label) {
   return { id: uid(), label: label || t("defaultTrackLabel"), max: 3, value: 0 };
+}
+
+function defaultThemeTracks() {
+  return [defaultTrack(t("trackLabelAbandon")), defaultTrack(t("trackLabelImprove")), defaultTrack(t("trackLabelAdvance"))];
+}
+
+// Every Theme (personal or the shared Company Theme) has exactly 3 tracks, same as the core
+// book — there's no UI to add or remove one, only to rename/progress the 3 that exist.
+function ensureThreeTracks(tracks) {
+  const list = Array.isArray(tracks) && tracks.length ? tracks.slice() : defaultThemeTracks();
+  while (list.length < 3) list.push(defaultTrack());
+  return list;
 }
 
 function defaultTheme() {
@@ -363,7 +492,7 @@ function defaultTheme() {
     question: "",
     power: [],
     weakness: [],
-    tracks: [defaultTrack()],
+    tracks: defaultThemeTracks(),
     special: "",
   };
 }
@@ -372,25 +501,25 @@ function defaultCharacter(id) {
   return {
     id,
     name: "",
+    background: "",
     themes: [],
     backpack: [],
     resourcePool: 0,
     statuses: [],
-    specialTrackUnlocked: false,
-    specialTrack: 0,
     notes: "",
   };
 }
 
 function normalizeCharacter(raw, id) {
   const c = Object.assign(defaultCharacter(id), raw || {}, { id });
+  c.background = typeof c.background === "string" ? c.background : "";
   c.themes = Array.isArray(c.themes) ? c.themes : [];
   c.backpack = Array.isArray(c.backpack) ? c.backpack : [];
   c.statuses = Array.isArray(c.statuses) ? c.statuses : [];
   c.themes.forEach((th) => {
     th.power = Array.isArray(th.power) ? th.power : [];
     th.weakness = Array.isArray(th.weakness) ? th.weakness : [];
-    th.tracks = Array.isArray(th.tracks) && th.tracks.length ? th.tracks : [defaultTrack()];
+    th.tracks = ensureThreeTracks(th.tracks);
     th.categoryId = typeof th.categoryId === "string" ? th.categoryId : null;
   });
   return c;
@@ -450,14 +579,14 @@ function connectedPlayers() {
 // ---------- Company Theme (shared, room-wide) ----------
 
 function defaultCompany() {
-  return { power: [], weakness: [], question: "", tracks: [defaultTrack()], special: "" };
+  return { power: [], weakness: [], question: "", tracks: defaultThemeTracks(), special: "" };
 }
 
 function normalizeCompany(raw) {
   const c = Object.assign(defaultCompany(), raw || {});
   c.power = Array.isArray(c.power) ? c.power : [];
   c.weakness = Array.isArray(c.weakness) ? c.weakness : [];
-  c.tracks = Array.isArray(c.tracks) && c.tracks.length ? c.tracks : [defaultTrack()];
+  c.tracks = ensureThreeTracks(c.tracks);
   return c;
 }
 
@@ -512,13 +641,41 @@ function renderTopbar() {
   const nameRow = el("div", { class: "hero-name-row" }, [
     el("span", { class: "player-meta-inline", text: t("playerLabel") + selfName }),
     selfRole === "GM" ? el("span", { class: "role-badge", text: t("roleNarrator") }) : null,
+  ]);
+
+  const controls = el("div", { class: "topbar-controls" });
+  controls.appendChild(
+    el("button", {
+      class: "icon-btn",
+      title: t("fontDecreaseTitle"),
+      text: "A−",
+      onclick: () => adjustFontScale(-1),
+    })
+  );
+  controls.appendChild(
+    el("button", {
+      class: "icon-btn",
+      title: t("fontIncreaseTitle"),
+      text: "A+",
+      onclick: () => adjustFontScale(1),
+    })
+  );
+  const expandBtn = el("button", {
+    class: "icon-btn",
+    title: isModalView ? t("collapseViewTitle") : t("expandViewTitle"),
+    onclick: () => (isModalView ? closeExpandedView() : openExpandedView()),
+  });
+  expandBtn.appendChild(isModalView ? collapseIcon() : expandIcon());
+  controls.appendChild(expandBtn);
+  controls.appendChild(
     el("button", {
       class: "lang-toggle",
       title: t("langToggleTitle"),
       text: lang === "en" ? "IT" : "EN",
       onclick: () => setLang(lang === "en" ? "it" : "en"),
-    }),
-  ]);
+    })
+  );
+  nameRow.appendChild(controls);
   bar.appendChild(nameRow);
 
   const tabButtons = [
@@ -552,7 +709,7 @@ function renderTopbar() {
   return bar;
 }
 
-// ---------- My Sheet ----------
+// ---------- Hero tab (My Sheet) ----------
 
 function renderMySheetTab() {
   const wrap = el("div");
@@ -590,7 +747,7 @@ function renderMySheetTab() {
   return wrap;
 }
 
-// ---------- Character sheet (reused for My Sheet and the GM's Roster editor) ----------
+// ---------- Character sheet (reused for Hero and the GM's Roster editor) ----------
 
 function renderCharacterSheet(character, save) {
   const wrap = el("div");
@@ -607,9 +764,10 @@ function renderCharacterSheet(character, save) {
   );
   wrap.appendChild(nameSection);
 
+  wrap.appendChild(renderBackgroundSection(character, save));
+
   const themesSection = el("div", { class: "section" });
   themesSection.appendChild(el("div", { class: "section-title" }, [el("span", { text: t("themesTitle") })]));
-  themesSection.appendChild(el("div", { class: "hint" }, t("themesHint")));
 
   const grid = el("div", { class: "themes-grid", id: "themes-grid" });
   character.themes.forEach((theme) => grid.appendChild(renderThemeCard(character, save, theme)));
@@ -632,10 +790,37 @@ function renderCharacterSheet(character, save) {
   wrap.appendChild(renderBackpackSection(character, save));
   wrap.appendChild(renderResourcePoolSection(character, save));
   wrap.appendChild(renderStatusesSection(character, save));
-  wrap.appendChild(renderSpecialTrackSection(character, save));
   wrap.appendChild(renderNotesSection(character, save));
 
   return wrap;
+}
+
+// ---------- Background (collapsible free-form character story) ----------
+
+function renderBackgroundSection(character, save) {
+  const isOpen = expandedBackgroundIds.has(character.id);
+  const section = el("div", { class: "section background-section" });
+  section.appendChild(
+    el("button", {
+      class: "btn small ghost background-toggle",
+      text: (isOpen ? "▾ " : "▸ ") + t("backgroundTitle"),
+      onclick: () => {
+        if (isOpen) expandedBackgroundIds.delete(character.id);
+        else expandedBackgroundIds.add(character.id);
+        refreshTabContent();
+      },
+    })
+  );
+  if (isOpen) {
+    section.appendChild(
+      el("textarea", {
+        class: "background-text",
+        placeholder: t("backgroundPlaceholder"),
+        oninput: (e) => { character.background = e.target.value; save(); },
+      }, character.background || "")
+    );
+  }
+  return section;
 }
 
 function replaceThemeCard(character, save, theme) {
@@ -718,13 +903,26 @@ function renderCategoryPicker(theme, save, rerender) {
 function renderThemeFront(character, save, theme, cardNode) {
   const face = el("div", { class: "theme-face front " + categoryColorClass(theme.categoryId) });
 
-  face.appendChild(
-    el("div", { class: "theme-card-topline flip-only" }, [
-      el("button", { class: "flip-btn", text: "↻", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) }),
-    ])
+  const topRow = el("div", { class: "theme-card-topline" });
+  topRow.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
+  const actions = el("div", { class: "theme-card-actions" });
+  const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
+  flipBtn.appendChild(flipIcon());
+  actions.appendChild(flipBtn);
+  actions.appendChild(
+    el("button", {
+      class: "btn danger small",
+      text: t("removeTheme"),
+      onclick: () => {
+        if (!confirm(t("removeThemeConfirm"))) return;
+        character.themes = character.themes.filter((th) => th.id !== theme.id);
+        save();
+        refreshTabContent();
+      },
+    })
   );
-
-  face.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
+  topRow.appendChild(actions);
+  face.appendChild(topRow);
 
   face.appendChild(
     el("input", {
@@ -746,6 +944,13 @@ function renderThemeFront(character, save, theme, cardNode) {
     })
   );
 
+  face.appendChild(
+    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { title: t("powerLabel") })
+  );
+  face.appendChild(
+    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { title: t("weaknessLabel") })
+  );
+
   face.appendChild(el("label", { class: "field-label", text: t("questionLabel") }));
   face.appendChild(
     el("textarea", {
@@ -755,55 +960,62 @@ function renderThemeFront(character, save, theme, cardNode) {
     }, theme.question)
   );
 
-  face.appendChild(el("label", { class: "field-label", text: t("powerLabel") }));
-  face.appendChild(renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme)));
-
-  face.appendChild(el("label", { class: "field-label", text: t("weaknessLabel") }));
-  face.appendChild(renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme)));
-
-  face.appendChild(
-    el("div", { class: "theme-footer" }, [
-      el("button", {
-        class: "btn danger small",
-        text: t("removeTheme"),
-        onclick: () => {
-          if (!confirm(t("removeThemeConfirm"))) return;
-          character.themes = character.themes.filter((th) => th.id !== theme.id);
-          save();
-          refreshTabContent();
-        },
-      }),
-    ])
-  );
-
   return face;
 }
 
 // Generic tag-list renderer, used for both personal Theme tags and the shared Company
 // Theme's tags. `owner` just needs an array at owner[kind]. When `readOnly` is set, tag
 // text/add/remove are locked but the burn/cross toggle stays live (used for the Company
-// Theme, which non-GM players may only "activate" a tag on, not edit its wording).
+// Theme, which non-GM players may only "activate" a tag on, not edit its wording). The
+// section title and its inline "+" button are rendered here too, via `opts.title`.
 function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
   const readOnly = !!opts.readOnly;
   const crossTitleOn = opts.burnTitle || t("burnTitle");
   const crossTitleOff = opts.restoreTitle || t("restoreTitle");
-  const listWrap = el("div");
-  const list = el("div", { class: "tag-list" });
+  const wrap = el("div");
 
-  owner[kind].forEach((tag) => {
-    const pill = el("div", { class: "tag-pill" + (kind === "weakness" ? " weakness" : "") + (tag.burned ? " burned" : "") });
-    pill.appendChild(
+  const canAdd = !readOnly && !(singleWeakness && owner[kind].length >= 3);
+  const header = el("div", { class: "tag-section-header" }, [
+    el("label", { class: "field-label", text: opts.title || "" }),
+  ]);
+  if (canAdd) {
+    header.appendChild(
       el("button", {
-        class: "flame",
-        title: tag.burned ? crossTitleOff : crossTitleOn,
-        text: tag.burned ? "🔥" : (kind === "weakness" ? "🩹" : "⚔"),
+        class: "tag-add-inline",
+        title: kind === "weakness" ? t("addWeakness") : t("addPower"),
+        text: "+",
         onclick: () => {
-          tag.burned = !tag.burned;
+          owner[kind].push({ id: uid(), text: "", burned: false });
           save();
           rerender();
         },
       })
     );
+  }
+  wrap.appendChild(header);
+
+  const list = el("div", { class: "tag-list" });
+  owner[kind].forEach((tag) => {
+    const pill = el("div", { class: "tag-pill" + (kind === "weakness" ? " weakness" : "") + (tag.burned ? " burned" : "") });
+
+    const flameBtn = el("button", {
+      class: "flame",
+      title: tag.burned ? crossTitleOff : crossTitleOn,
+      onclick: () => {
+        tag.burned = !tag.burned;
+        save();
+        rerender();
+      },
+    });
+    if (tag.burned) {
+      flameBtn.textContent = "🔥";
+    } else if (kind === "weakness") {
+      flameBtn.appendChild(chevronsDownIcon());
+    } else {
+      flameBtn.textContent = "⚔";
+    }
+    pill.appendChild(flameBtn);
+
     if (readOnly) {
       pill.appendChild(el("span", { class: "tag-text-readonly", text: tag.text || "…" }));
     } else {
@@ -834,39 +1046,27 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
     }
     list.appendChild(pill);
   });
+  wrap.appendChild(list);
 
-  listWrap.appendChild(list);
-
-  if (!readOnly && !(singleWeakness && owner[kind].length >= 3)) {
-    listWrap.appendChild(
-      el("button", {
-        class: "add-tag-btn",
-        text: kind === "weakness" ? t("addWeakness") : t("addPower"),
-        onclick: () => {
-          owner[kind].push({ id: uid(), text: "", burned: false });
-          save();
-          rerender();
-        },
-      })
-    );
-  }
-
-  return listWrap;
+  return wrap;
 }
 
 function renderThemeBack(character, save, theme, cardNode) {
   const face = el("div", { class: "theme-face back " + categoryColorClass(theme.categoryId) });
 
-  face.appendChild(
-    el("div", { class: "theme-card-topline" }, [
-      el("span", { class: "valore-chip " + categoryColorClass(theme.categoryId), text: t("tracksTitle") }),
-      el("button", { class: "flip-btn", text: "↻", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) }),
-    ])
-  );
+  const topRow = el("div", { class: "theme-card-topline" }, [
+    el("span", { class: "valore-chip " + categoryColorClass(theme.categoryId), text: t("tracksTitle") }),
+  ]);
+  const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
+  flipBtn.appendChild(flipIcon());
+  topRow.appendChild(flipBtn);
+  face.appendChild(topRow);
 
-  face.appendChild(renderTracksBlock(theme, save, () => replaceThemeCard(character, save, theme), {
-    colorClass: categoryColorClass(theme.categoryId),
-  }));
+  face.appendChild(
+    renderTracksBlock(theme, save, () => replaceThemeCard(character, save, theme), {
+      colorClass: categoryColorClass(theme.categoryId),
+    })
+  );
 
   face.appendChild(el("label", { class: "field-label", text: t("specialLabel") }));
   face.appendChild(
@@ -881,8 +1081,9 @@ function renderThemeBack(character, save, theme, cardNode) {
 }
 
 // Generic track-list renderer, used for personal Themes and the Company Theme. `owner`
-// needs an array at owner.tracks. `readOnly` locks add/rename/remove/dot-clicks (used for
-// the Company Theme when viewed by a non-GM player).
+// needs an array at owner.tracks, always exactly 3 (like the core book) — there's no add or
+// remove UI. `readOnly` locks rename/dot-clicks (used for the Company Theme when viewed by a
+// non-GM player).
 function renderTracksBlock(owner, save, rerender, opts = {}) {
   const readOnly = !!opts.readOnly;
   const colorClass = opts.colorClass || "no-category";
@@ -904,21 +1105,6 @@ function renderTracksBlock(owner, save, rerender, opts = {}) {
       );
     }
     titleRow.appendChild(el("span", { class: "track-name", text: track.value + " / " + track.max }));
-    if (!readOnly) {
-      titleRow.appendChild(
-        el("button", {
-          class: "tag-remove",
-          title: t("trackRemoveTitle"),
-          text: "✕",
-          onclick: () => {
-            owner.tracks = owner.tracks.filter((tr) => tr.id !== track.id);
-            if (owner.tracks.length === 0) owner.tracks.push(defaultTrack());
-            save();
-            rerender();
-          },
-        })
-      );
-    }
     block.appendChild(titleRow);
 
     const dots = el("div", { class: "dots" });
@@ -942,20 +1128,6 @@ function renderTracksBlock(owner, save, rerender, opts = {}) {
     block.appendChild(dots);
     wrap.appendChild(block);
   });
-
-  if (!readOnly) {
-    wrap.appendChild(
-      el("button", {
-        class: "btn small ghost",
-        text: t("addTrack"),
-        onclick: () => {
-          owner.tracks.push(defaultTrack(t("newTrackLabel")));
-          save();
-          rerender();
-        },
-      })
-    );
-  }
 
   return wrap;
 }
@@ -1101,50 +1273,6 @@ function renderStatusesSection(character, save) {
   return section;
 }
 
-// ---------- Special Track (optional) ----------
-
-function renderSpecialTrackSection(character, save) {
-  const section = el("div", { class: "section" });
-  section.appendChild(el("div", { class: "section-title" }, [el("span", { text: t("specialTrackTitle") })]));
-
-  const toggleRow = el("div", { class: "vow-toggle-row" });
-  toggleRow.appendChild(
-    el("input", {
-      type: "checkbox",
-      id: "special-track-unlocked",
-      checked: character.specialTrackUnlocked ? "checked" : undefined,
-      onchange: (e) => {
-        character.specialTrackUnlocked = e.target.checked;
-        save();
-        refreshTabContent();
-      },
-    })
-  );
-  toggleRow.appendChild(el("label", { for: "special-track-unlocked", text: t("specialTrackToggle") }));
-  section.appendChild(toggleRow);
-  section.appendChild(el("div", { class: "hint" }, t("specialTrackHint")));
-
-  if (character.specialTrackUnlocked) {
-    const dots = el("div", { class: "dots" });
-    for (let i = 0; i < 5; i++) {
-      const filled = character.specialTrack > i;
-      dots.appendChild(
-        el("button", {
-          class: "dot" + (filled ? " filled color-violet" : ""),
-          onclick: () => {
-            character.specialTrack = character.specialTrack === i + 1 ? i : i + 1;
-            save();
-            refreshTabContent();
-          },
-        })
-      );
-    }
-    section.appendChild(dots);
-  }
-
-  return section;
-}
-
 // ---------- Notes ----------
 
 function renderNotesSection(character, save) {
@@ -1185,19 +1313,19 @@ function renderCompanyTab() {
     card.appendChild(el("div", { class: "gm-full-line", text: company.question || "—" }));
   }
 
-  card.appendChild(el("label", { class: "field-label", text: t("companyPowerLabel") }));
   card.appendChild(
     renderTagList(company, "power", false, save, () => refreshTabContent(), {
       readOnly: !gm,
+      title: t("companyPowerLabel"),
       burnTitle: t("companyCrossTitle"),
       restoreTitle: t("companyRestoreTitle"),
     })
   );
 
-  card.appendChild(el("label", { class: "field-label", text: t("companyWeaknessLabel") }));
   card.appendChild(
     renderTagList(company, "weakness", true, save, () => refreshTabContent(), {
       readOnly: !gm,
+      title: t("companyWeaknessLabel"),
       burnTitle: t("companyCrossTitle"),
       restoreTitle: t("companyRestoreTitle"),
     })
