@@ -5,7 +5,7 @@
   "action": {
     "title": "Hero Sheet",
     "icon": "/owlbear-mist-sheet/icon.svg",
-    popover": "/owlbear-mist-sheet/index.html",
+    "popover": "/owlbear-mist-sheet/index.html",
     "height": 760,
     "width": 440
   }
