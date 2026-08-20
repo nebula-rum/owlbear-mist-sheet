@@ -431,24 +431,44 @@ function uid() {
 // would silently turn every "if (!confirm(...)) return" delete button into a dead button until
 // the page reloads. This renders our own overlay instead, so a delete can never be blocked by
 // browser dialog settings.
+let activeConfirmClose = null;
+
+// Closes any currently-open confirm dialog without running its onConfirm. Called at the top of
+// every full renderApp() pass: a full re-render (triggered by a remote room-metadata change,
+// player.onChange, a font/lang toggle, etc. while the dialog was open) would otherwise leave a
+// "ghost" dialog on screen whose Delete button still closes over data from before the re-render
+// — clicking it would silently do nothing (see bindCharacter()/bindCompany() for the other half
+// of this fix). Dropping the stale dialog instead makes the failure visible: it just closes, so
+// the user re-opens it and the retry works against current data.
+function closeConfirmDialog() {
+  if (activeConfirmClose) activeConfirmClose();
+}
+
 function showConfirmDialog(message, onConfirm) {
+  closeConfirmDialog(); // never stack more than one confirm dialog at once
+
   const overlay = el("div", { class: "confirm-overlay" });
   const box = el("div", { class: "confirm-box" });
   box.appendChild(el("div", { class: "confirm-message", text: message }));
   const actions = el("div", { class: "confirm-actions" });
-  actions.appendChild(
-    el("button", {
-      class: "btn ghost",
-      text: t("confirmCancel"),
-      onclick: () => overlay.remove(),
-    })
-  );
+
+  function onKey(e) {
+    if (e.key === "Escape") close();
+  }
+  function close() {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+    if (activeConfirmClose === close) activeConfirmClose = null;
+  }
+  activeConfirmClose = close;
+
+  actions.appendChild(el("button", { class: "btn ghost", text: t("confirmCancel"), onclick: close }));
   actions.appendChild(
     el("button", {
       class: "btn danger",
       text: t("confirmDelete"),
       onclick: () => {
-        overlay.remove();
+        close();
         onConfirm();
       },
     })
@@ -456,14 +476,9 @@ function showConfirmDialog(message, onConfirm) {
   box.appendChild(actions);
   overlay.appendChild(box);
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) close();
   });
-  document.addEventListener("keydown", function onKey(e) {
-    if (e.key === "Escape") {
-      overlay.remove();
-      document.removeEventListener("keydown", onKey);
-    }
-  });
+  document.addEventListener("keydown", onKey);
   document.body.appendChild(overlay);
 }
 
@@ -662,10 +677,19 @@ function getCharacter(id) {
 
 // Loads the character, makes it the live object stored in roomMeta (so in-place mutation +
 // scheduleRoomSave works exactly like the rest of the app), and returns {character, save}.
+//
+// Reuses the SAME object identity across re-renders whenever roomMeta already holds a live,
+// normalized character for this id, instead of building a fresh one every call. Without this,
+// any re-render that happens while e.g. a delete-confirm dialog is open (an OBR room-metadata
+// echo, a player.onChange, a font/lang toggle) replaces roomMeta[key] with a brand-new object —
+// the dialog's onConfirm still mutates the OLD (now orphaned) object, save() persists the
+// unmutated new one, and the delete silently does nothing until tried a second time.
 function bindCharacter(id) {
-  const character = getCharacter(id);
-  roomMeta[characterKey(id)] = character;
-  return { character, save: () => scheduleRoomSave(characterKey(id)) };
+  const key = characterKey(id);
+  const existing = roomMeta[key];
+  const character = existing && existing.id === id ? existing : getCharacter(id);
+  roomMeta[key] = character;
+  return { character, save: () => scheduleRoomSave(key) };
 }
 
 // ---------- roster (GM-managed index of characters) ----------
@@ -725,8 +749,11 @@ function getCompany() {
   return normalizeCompany(roomMeta[ROOM_KEYS.company]);
 }
 
+// Same object-identity-reuse reasoning as bindCharacter() above — otherwise an open confirm
+// dialog on a Company tag can be silently orphaned by an intervening re-render.
 function bindCompany() {
-  const company = getCompany();
+  const existing = roomMeta[ROOM_KEYS.company];
+  const company = existing || getCompany();
   roomMeta[ROOM_KEYS.company] = company;
   return { company, save: () => scheduleRoomSave(ROOM_KEYS.company) };
 }
@@ -734,6 +761,7 @@ function bindCompany() {
 // ---------- top-level render ----------
 
 function renderApp() {
+  closeConfirmDialog();
   app.innerHTML = "";
 
   if (backend === "standalone") {
@@ -1129,21 +1157,26 @@ function renderThemeFront(character, save, theme, cardNode) {
     renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
   );
 
-  // Type and Quest are secondary info (checked occasionally, not every beat of play), so they
-  // sit behind a "Show more" toggle — Title (as a Power tag) and the Power/Weakness tags stay
-  // visible with zero clicks, which is what's actually referenced constantly during a scene.
-  const moreOpen = expandedThemeExtraIds.has(theme.id);
-  face.appendChild(
-    el("button", {
-      class: "theme-more-toggle",
-      text: (moreOpen ? "▴ " : "▾ ") + (moreOpen ? t("showLess") : t("showMore")),
-      onclick: () => {
-        if (moreOpen) expandedThemeExtraIds.delete(theme.id);
-        else expandedThemeExtraIds.add(theme.id);
-        replaceThemeCard(character, save, theme);
-      },
-    })
-  );
+  // Type and Quest are secondary info (checked occasionally, not every beat of play), so in the
+  // compact popover they sit behind a "Show more" toggle — Title (as a Power tag) and the
+  // Power/Weakness tags stay visible with zero clicks, which is what's actually referenced
+  // constantly during a scene. The expanded/full-screen view has room to spare and is opened
+  // specifically to see everything at once, so there the toggle is skipped entirely and Type +
+  // Quest are always shown.
+  const moreOpen = isModalView || expandedThemeExtraIds.has(theme.id);
+  if (!isModalView) {
+    face.appendChild(
+      el("button", {
+        class: "theme-more-toggle",
+        text: (moreOpen ? "▴ " : "▾ ") + (moreOpen ? t("showLess") : t("showMore")),
+        onclick: () => {
+          if (moreOpen) expandedThemeExtraIds.delete(theme.id);
+          else expandedThemeExtraIds.add(theme.id);
+          replaceThemeCard(character, save, theme);
+        },
+      })
+    );
+  }
 
   if (moreOpen) {
     const moreBody = el("div", { class: "theme-more-body" });
@@ -1398,20 +1431,20 @@ function renderBackpackSection(character, save) {
         oninput: (e) => { item.text = e.target.value; save(); },
       })
     );
-    row.appendChild(
-      el("button", {
-        class: "tag-remove",
-        text: "✕",
-        title: t("removeItem"),
-        onclick: () => {
-          showConfirmDialog(t("removeItemConfirm"), () => {
-            character.backpack = character.backpack.filter((i) => i.id !== item.id);
-            save();
-            refreshTabContent();
-          });
-        },
-      })
-    );
+    const itemTrash = el("button", {
+      class: "chip-trash",
+      title: t("removeItem"),
+      "aria-label": t("removeItem"),
+      onclick: () => {
+        showConfirmDialog(t("removeItemConfirm"), () => {
+          character.backpack = character.backpack.filter((i) => i.id !== item.id);
+          save();
+          refreshTabContent();
+        });
+      },
+    });
+    itemTrash.appendChild(trashIcon());
+    row.appendChild(itemTrash);
     rows.appendChild(row);
   });
   section.appendChild(rows);
