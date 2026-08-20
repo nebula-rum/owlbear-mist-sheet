@@ -1,0 +1,12 @@
+{
+  "name": "Mist Engine — Hero Sheet",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "action": {
+    "title": "Hero Sheet (Mist Engine)",
+    "icon": "icon.svg",
+    "popover": "index.html",
+    "height": 760,
+    "width": 440
+  }
+}
