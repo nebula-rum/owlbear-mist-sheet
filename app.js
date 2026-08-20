@@ -39,6 +39,8 @@ const LABELS = {
     fontIncreaseTitle: "Increase text size",
     expandViewTitle: "Open larger view",
     collapseViewTitle: "Close larger view",
+    confirmCancel: "Cancel",
+    confirmDelete: "Delete",
 
     characterNamePlaceholder: "Character Name",
     backgroundTitle: "Background",
@@ -57,6 +59,9 @@ const LABELS = {
     weaknessPlaceholder: "weakness tag",
     burnTitle: "Burn this tag",
     restoreTitle: "Restore this tag",
+    removeTagTitle: "Remove tag",
+    showMore: "Show more",
+    showLess: "Show less",
     removeTheme: "Delete",
     removeThemeConfirm: "Remove this Theme?",
     flipTitle: "Flip the card",
@@ -68,13 +73,11 @@ const LABELS = {
     specialLabel: "Special Upgrades",
     specialPlaceholder: "Upgrades unlocked for this Theme…",
     backpackTitle: "Backpack",
-    backpackHint: "Click the square to mark an item used.",
     addItem: "+ Item",
     itemPlaceholder: "item…",
     removeItem: "Remove item",
     removeItemConfirm: "Remove this item?",
     activeTagsTitle: "Active Tags",
-    activeTagsHint: "Tags are simple markers — just a name. Statuses track tiers 1–6 — click any box to toggle it; tiers aren't always crossed off in order.",
     addActiveTag: "+ Tag",
     addStatus: "+ Status",
     activeTagPlaceholder: "tag",
@@ -139,6 +142,8 @@ const LABELS = {
     fontIncreaseTitle: "Aumenta dimensione testo",
     expandViewTitle: "Apri vista grande",
     collapseViewTitle: "Chiudi vista grande",
+    confirmCancel: "Annulla",
+    confirmDelete: "Elimina",
 
     characterNamePlaceholder: "Nome dell'Eroe",
     backgroundTitle: "Background",
@@ -157,6 +162,9 @@ const LABELS = {
     weaknessPlaceholder: "attributo di debolezza",
     burnTitle: "Brucia questo attributo",
     restoreTitle: "Ripristina questo attributo",
+    removeTagTitle: "Rimuovi attributo",
+    showMore: "Mostra altro",
+    showLess: "Mostra meno",
     removeTheme: "Elimina",
     removeThemeConfirm: "Rimuovere questo Tema?",
     flipTitle: "Gira la carta",
@@ -168,19 +176,17 @@ const LABELS = {
     specialLabel: "Miglioramenti Speciali",
     specialPlaceholder: "Miglioramenti sbloccati per questo Tema…",
     backpackTitle: "Zaino",
-    backpackHint: "Clicca il quadrato per barrare un oggetto usato.",
     addItem: "+ Oggetto",
     itemPlaceholder: "oggetto…",
     removeItem: "Rimuovi oggetto",
     removeItemConfirm: "Rimuovere questo oggetto?",
-    activeTagsTitle: "Tag Attivi",
-    activeTagsHint: "I Tag sono semplici indicatori — solo un nome. Gli Stati tracciano livelli 1–6 — clicca una casella per attivarla/disattivarla; i livelli non vengono sempre barrati in ordine.",
-    addActiveTag: "+ Tag",
+    activeTagsTitle: "Attributi Attivi",
+    addActiveTag: "+ Attributo",
     addStatus: "+ Stato",
-    activeTagPlaceholder: "tag",
+    activeTagPlaceholder: "attributo",
     statusPlaceholder: "stato",
-    removeActiveTag: "Rimuovi tag",
-    removeActiveTagConfirm: "Rimuovere questo tag?",
+    removeActiveTag: "Rimuovi attributo",
+    removeActiveTagConfirm: "Rimuovere questo attributo?",
     removeStatus: "Rimuovi stato",
     removeStatusConfirm: "Rimuovere questo stato?",
     notesTitle: "Note",
@@ -197,7 +203,7 @@ const LABELS = {
     defaultCategory1: "Origine",
     defaultCategory2: "Avventura",
     defaultCategory3: "Grandezza",
-    tagColorLabel: "Colore Tag",
+    tagColorLabel: "Colore Attributo",
     statusColorLabel: "Colore Stato",
 
     companyThemeTitle: "Tema della Compagnia",
@@ -386,6 +392,7 @@ let activeTab = "sheet";
 let activeCharacterId = null; // which accessible character "Hero" is currently showing
 let expandedRosterId = null; // which character is expanded in the Roster tab (one at a time)
 const expandedBackgroundIds = new Set(); // which characters have their Background box open
+const expandedThemeExtraIds = new Set(); // which Theme cards have their "Show more" (Type/Quest) open
 let partyPlayers = []; // [{id, name, role, metadata}] — everyone except self
 
 function isGM() {
@@ -415,6 +422,49 @@ function el(tag, attrs = {}, children = []) {
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// ---------- in-app confirm dialog ----------
+// Deliberately NOT the browser's native confirm(): Chrome (and others) let a user permanently
+// silence a page's dialogs via a "Don't allow this page to create additional dialogs"
+// checkbox, after which confirm() returns false instantly with no dialog shown at all — which
+// would silently turn every "if (!confirm(...)) return" delete button into a dead button until
+// the page reloads. This renders our own overlay instead, so a delete can never be blocked by
+// browser dialog settings.
+function showConfirmDialog(message, onConfirm) {
+  const overlay = el("div", { class: "confirm-overlay" });
+  const box = el("div", { class: "confirm-box" });
+  box.appendChild(el("div", { class: "confirm-message", text: message }));
+  const actions = el("div", { class: "confirm-actions" });
+  actions.appendChild(
+    el("button", {
+      class: "btn ghost",
+      text: t("confirmCancel"),
+      onclick: () => overlay.remove(),
+    })
+  );
+  actions.appendChild(
+    el("button", {
+      class: "btn danger",
+      text: t("confirmDelete"),
+      onclick: () => {
+        overlay.remove();
+        onConfirm();
+      },
+    })
+  );
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.addEventListener("keydown", function onKey(e) {
+    if (e.key === "Escape") {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+    }
+  });
+  document.body.appendChild(overlay);
 }
 
 // ---------- room metadata store ----------
@@ -547,6 +597,7 @@ function defaultTheme() {
   return {
     id: uid(),
     title: "",
+    titleBurned: false,
     type: "",
     categoryId: cats.length ? cats[0].id : null,
     question: "",
@@ -600,6 +651,7 @@ function normalizeCharacter(raw, id) {
     th.weakness = Array.isArray(th.weakness) ? th.weakness : [];
     th.tracks = ensureThreeTracks(th.tracks);
     th.categoryId = typeof th.categoryId === "string" ? th.categoryId : null;
+    th.titleBurned = typeof th.titleBurned === "boolean" ? th.titleBurned : false;
   });
   return c;
 }
@@ -978,11 +1030,32 @@ function renderCategoryPicker(theme, save, rerender) {
   return el("div", { class: "category-picker" }, [select]);
 }
 
-// A Theme title needs to wrap onto a second line instead of clipping when it's longer than the
-// card width. A plain <input> can't wrap, so this uses the standard CSS-grid "replicated value"
-// auto-grow trick: a hidden ::after with the same text drives the grid row's height, and the
-// real <textarea> (which does wrap) sits on top of it — no JS height-measuring needed.
-function renderThemeTitleField(theme, save) {
+// A Theme's title/name is itself a Power tag in the rules (it can be invoked and burned just
+// like any other Power tag), so it's rendered as one: same pill shape, same claw icon, a
+// burn/restore toggle. It still needs to wrap onto a second line instead of clipping when it's
+// longer than the card width — a plain <input> can't wrap, so the text field inside the pill
+// uses the standard CSS-grid "replicated value" auto-grow trick: a hidden ::after with the same
+// text drives the grid row's height, and the real <textarea> (which does wrap) sits on top of
+// it, no JS height-measuring needed.
+function renderThemeTitlePill(theme, save, rerender) {
+  const pill = el("div", { class: "theme-title-pill" + (theme.titleBurned ? " burned" : "") });
+
+  const flameBtn = el("button", {
+    class: "flame",
+    title: theme.titleBurned ? t("restoreTitle") : t("burnTitle"),
+    onclick: () => {
+      theme.titleBurned = !theme.titleBurned;
+      save();
+      rerender();
+    },
+  });
+  if (theme.titleBurned) {
+    flameBtn.textContent = "🔥";
+  } else {
+    flameBtn.appendChild(clawIcon());
+  }
+  pill.appendChild(flameBtn);
+
   const wrap = el("div", { class: "theme-title-wrap", "data-replicated-value": theme.title || "" });
   wrap.appendChild(
     el(
@@ -1000,7 +1073,9 @@ function renderThemeTitleField(theme, save) {
       theme.title
     )
   );
-  return wrap;
+  pill.appendChild(wrap);
+
+  return pill;
 }
 
 function renderThemeFront(character, save, theme, cardNode) {
@@ -1009,52 +1084,88 @@ function renderThemeFront(character, save, theme, cardNode) {
   const topRow = el("div", { class: "theme-card-topline" });
   topRow.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
   const actions = el("div", { class: "theme-card-actions" });
+
+  const addPowerBtn = el("button", {
+    class: "icon-btn-round",
+    title: t("addPower"),
+    "aria-label": t("addPower"),
+    onclick: () => {
+      theme.power.push({ id: uid(), text: "", burned: false });
+      save();
+      replaceThemeCard(character, save, theme);
+    },
+  });
+  addPowerBtn.appendChild(clawIcon());
+  actions.appendChild(addPowerBtn);
+
+  const weaknessAtCap = theme.weakness.length >= 3;
+  const addWeaknessBtn = el("button", {
+    class: "icon-btn-round",
+    title: t("addWeakness"),
+    "aria-label": t("addWeakness"),
+    disabled: weaknessAtCap ? "disabled" : undefined,
+    onclick: () => {
+      if (theme.weakness.length >= 3) return;
+      theme.weakness.push({ id: uid(), text: "", burned: false });
+      save();
+      replaceThemeCard(character, save, theme);
+    },
+  });
+  addWeaknessBtn.appendChild(chevronsDownIcon());
+  actions.appendChild(addWeaknessBtn);
+
   const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
   flipBtn.appendChild(flipIcon());
   actions.appendChild(flipBtn);
-  const deleteBtn = el("button", {
-    class: "btn danger small icon-only",
-    title: t("removeTheme"),
-    "aria-label": t("removeTheme"),
-    onclick: () => {
-      if (!confirm(t("removeThemeConfirm"))) return;
-      character.themes = character.themes.filter((th) => th.id !== theme.id);
-      save();
-      refreshTabContent();
-    },
-  });
-  deleteBtn.appendChild(trashIcon());
-  actions.appendChild(deleteBtn);
   topRow.appendChild(actions);
   face.appendChild(topRow);
 
-  face.appendChild(renderThemeTitleField(theme, save));
+  face.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme)));
 
   face.appendChild(
-    el("input", {
-      class: "theme-type-input",
-      type: "text",
-      placeholder: t("themeTypePlaceholder"),
-      value: theme.type,
-      oninput: (e) => { theme.type = e.target.value; save(); },
+    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
+  );
+  face.appendChild(
+    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
+  );
+
+  // Type and Quest are secondary info (checked occasionally, not every beat of play), so they
+  // sit behind a "Show more" toggle — Title (as a Power tag) and the Power/Weakness tags stay
+  // visible with zero clicks, which is what's actually referenced constantly during a scene.
+  const moreOpen = expandedThemeExtraIds.has(theme.id);
+  face.appendChild(
+    el("button", {
+      class: "theme-more-toggle",
+      text: (moreOpen ? "▴ " : "▾ ") + (moreOpen ? t("showLess") : t("showMore")),
+      onclick: () => {
+        if (moreOpen) expandedThemeExtraIds.delete(theme.id);
+        else expandedThemeExtraIds.add(theme.id);
+        replaceThemeCard(character, save, theme);
+      },
     })
   );
 
-  face.appendChild(
-    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { title: t("powerLabel") })
-  );
-  face.appendChild(
-    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { title: t("weaknessLabel") })
-  );
-
-  face.appendChild(el("label", { class: "field-label", text: t("questionLabel") }));
-  face.appendChild(
-    el("textarea", {
-      class: "mission-text",
-      placeholder: t("questionPlaceholder"),
-      oninput: (e) => { theme.question = e.target.value; save(); },
-    }, theme.question)
-  );
+  if (moreOpen) {
+    const moreBody = el("div", { class: "theme-more-body" });
+    moreBody.appendChild(
+      el("input", {
+        class: "theme-type-input",
+        type: "text",
+        placeholder: t("themeTypePlaceholder"),
+        value: theme.type,
+        oninput: (e) => { theme.type = e.target.value; save(); },
+      })
+    );
+    moreBody.appendChild(el("label", { class: "field-label", text: t("questionLabel") }));
+    moreBody.appendChild(
+      el("textarea", {
+        class: "mission-text",
+        placeholder: t("questionPlaceholder"),
+        oninput: (e) => { theme.question = e.target.value; save(); },
+      }, theme.question)
+    );
+    face.appendChild(moreBody);
+  }
 
   return face;
 }
@@ -1070,25 +1181,27 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
   const crossTitleOff = opts.restoreTitle || t("restoreTitle");
   const wrap = el("div");
 
-  const canAdd = !readOnly && !(singleWeakness && owner[kind].length >= 3);
-  const header = el("div", { class: "tag-section-header" }, [
-    el("label", { class: "field-label", text: opts.title || "" }),
-  ]);
-  if (canAdd) {
-    header.appendChild(
-      el("button", {
-        class: "tag-add-inline",
-        title: kind === "weakness" ? t("addWeakness") : t("addPower"),
-        text: "+",
-        onclick: () => {
-          owner[kind].push({ id: uid(), text: "", burned: false });
-          save();
-          rerender();
-        },
-      })
-    );
+  if (!opts.hideHeader) {
+    const canAdd = !readOnly && !(singleWeakness && owner[kind].length >= 3);
+    const header = el("div", { class: "tag-section-header" }, [
+      el("label", { class: "field-label", text: opts.title || "" }),
+    ]);
+    if (canAdd) {
+      header.appendChild(
+        el("button", {
+          class: "tag-add-inline",
+          title: kind === "weakness" ? t("addWeakness") : t("addPower"),
+          text: "+",
+          onclick: () => {
+            owner[kind].push({ id: uid(), text: "", burned: false });
+            save();
+            rerender();
+          },
+        })
+      );
+    }
+    wrap.appendChild(header);
   }
-  wrap.appendChild(header);
 
   const list = el("div", { class: "tag-list" });
   owner[kind].forEach((tag) => {
@@ -1128,17 +1241,18 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
           },
         })
       );
-      pill.appendChild(
-        el("button", {
-          class: "tag-remove",
-          text: "✕",
-          onclick: () => {
-            owner[kind] = owner[kind].filter((tg) => tg.id !== tag.id);
-            save();
-            rerender();
-          },
-        })
-      );
+      const tagTrash = el("button", {
+        class: "chip-trash",
+        title: t("removeTagTitle"),
+        "aria-label": t("removeTagTitle"),
+        onclick: () => {
+          owner[kind] = owner[kind].filter((tg) => tg.id !== tag.id);
+          save();
+          rerender();
+        },
+      });
+      tagTrash.appendChild(trashIcon());
+      pill.appendChild(tagTrash);
     }
     list.appendChild(pill);
   });
@@ -1172,6 +1286,23 @@ function renderThemeBack(character, save, theme, cardNode) {
       oninput: (e) => { theme.special = e.target.value; save(); },
     }, theme.special)
   );
+
+  const footer = el("div", { class: "theme-back-footer" });
+  const deleteBtn = el("button", {
+    class: "btn danger small icon-only",
+    title: t("removeTheme"),
+    "aria-label": t("removeTheme"),
+    onclick: () => {
+      showConfirmDialog(t("removeThemeConfirm"), () => {
+        character.themes = character.themes.filter((th) => th.id !== theme.id);
+        save();
+        refreshTabContent();
+      });
+    },
+  });
+  deleteBtn.appendChild(trashIcon());
+  footer.appendChild(deleteBtn);
+  face.appendChild(footer);
 
   return face;
 }
@@ -1246,8 +1377,6 @@ function renderBackpackSection(character, save) {
       }),
     ])
   );
-  section.appendChild(el("div", { class: "hint" }, t("backpackHint")));
-
   const rows = el("div", { class: "list-rows" });
   character.backpack.forEach((item) => {
     const row = el("div", { class: "list-row" + (item.used ? " used" : "") });
@@ -1275,10 +1404,11 @@ function renderBackpackSection(character, save) {
         text: "✕",
         title: t("removeItem"),
         onclick: () => {
-          if (!confirm(t("removeItemConfirm"))) return;
-          character.backpack = character.backpack.filter((i) => i.id !== item.id);
-          save();
-          refreshTabContent();
+          showConfirmDialog(t("removeItemConfirm"), () => {
+            character.backpack = character.backpack.filter((i) => i.id !== item.id);
+            save();
+            refreshTabContent();
+          });
         },
       })
     );
@@ -1325,8 +1455,6 @@ function renderActiveTagsSection(character, save) {
       el("div", { class: "title-buttons" }, [addTagBtn, addStatusBtn]),
     ])
   );
-  section.appendChild(el("div", { class: "hint" }, t("activeTagsHint")));
-
   const list = el("div", { class: "active-tags-list" });
 
   character.tags.forEach((tag) => {
@@ -1344,10 +1472,11 @@ function renderActiveTagsSection(character, save) {
       title: t("removeActiveTag"),
       "aria-label": t("removeActiveTag"),
       onclick: () => {
-        if (!confirm(t("removeActiveTagConfirm"))) return;
-        character.tags = character.tags.filter((tg) => tg.id !== tag.id);
-        save();
-        refreshTabContent();
+        showConfirmDialog(t("removeActiveTagConfirm"), () => {
+          character.tags = character.tags.filter((tg) => tg.id !== tag.id);
+          save();
+          refreshTabContent();
+        });
       },
     });
     trash.appendChild(trashIcon());
@@ -1372,10 +1501,11 @@ function renderActiveTagsSection(character, save) {
       title: t("removeStatus"),
       "aria-label": t("removeStatus"),
       onclick: () => {
-        if (!confirm(t("removeStatusConfirm"))) return;
-        character.statuses = character.statuses.filter((x) => x.id !== s.id);
-        save();
-        refreshTabContent();
+        showConfirmDialog(t("removeStatusConfirm"), () => {
+          character.statuses = character.statuses.filter((x) => x.id !== s.id);
+          save();
+          refreshTabContent();
+        });
       },
     });
     trash.appendChild(trashIcon());
@@ -1583,15 +1713,16 @@ function renderRosterTab() {
         title: t("removeCharacter"),
         text: "✕",
         onclick: () => {
-          if (!confirm(t("removeCharacterConfirm"))) return;
-          updateRoster((r) => {
-            const idx = r.findIndex((x) => x.id === entry.id);
-            if (idx >= 0) r.splice(idx, 1);
+          showConfirmDialog(t("removeCharacterConfirm"), () => {
+            updateRoster((r) => {
+              const idx = r.findIndex((x) => x.id === entry.id);
+              if (idx >= 0) r.splice(idx, 1);
+            });
+            delete roomMeta[characterKey(entry.id)];
+            scheduleRoomSave(characterKey(entry.id));
+            if (expandedRosterId === entry.id) expandedRosterId = null;
+            refreshTabContent();
           });
-          delete roomMeta[characterKey(entry.id)];
-          scheduleRoomSave(characterKey(entry.id));
-          if (expandedRosterId === entry.id) expandedRosterId = null;
-          refreshTabContent();
         },
       })
     );

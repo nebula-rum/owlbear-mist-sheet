@@ -413,14 +413,68 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .flip-btn:hover { background: rgba(58,44,28,0.18); }
 
-/* Theme title: wraps to a second line instead of clipping when it's longer than the card,
-   via the standard CSS-grid "replicated value" auto-grow trick (see renderThemeTitleField). */
+/* Same round-icon-button treatment as .flip-btn, used for the "add Power tag" / "add Weakness
+   tag" buttons on a Theme's front top row. */
+.icon-btn-round {
+  border: none;
+  background: rgba(58,44,28,0.08);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+.icon-btn-round:hover { background: rgba(58,44,28,0.18); }
+.icon-btn-round:disabled { opacity: 0.35; cursor: not-allowed; }
+.icon-btn-round:disabled:hover { background: rgba(58,44,28,0.08); }
+
+/* Theme back: the delete button lives here now (bottom-right), not on the front. */
+.theme-back-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* Theme title: the rules treat a Theme's name as a Power tag itself (invokable/burnable), so
+   it's styled and behaves like one — same pill + claw icon + burn toggle as a regular Power
+   tag. The text field inside still needs to wrap onto a second line instead of clipping when
+   it's longer than the card, via the standard CSS-grid "replicated value" auto-grow trick. */
+.theme-title-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--parchment-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.theme-title-pill.burned {
+  text-decoration: line-through;
+  opacity: 0.55;
+  background: #d8cdb4;
+}
+.theme-title-pill .flame {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 1px 2px 0;
+  line-height: 1;
+  border-radius: 50%;
+  color: var(--ink-soft);
+}
+.theme-title-pill .flame:hover { background: rgba(58,44,28,0.14); }
+
 .theme-title-wrap {
+  flex: 1;
+  min-width: 0;
   display: grid;
   font-family: "Cinzel", Georgia, serif;
   font-weight: 700;
   font-size: 1.1em;
-  margin-bottom: 4px;
 }
 .theme-title-wrap::after {
   content: attr(data-replicated-value) " ";
@@ -428,8 +482,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   white-space: pre-wrap;
   word-break: break-word;
   visibility: hidden;
-  padding: 2px 0;
-  border-bottom: 1px solid transparent;
 }
 .theme-title-wrap > .theme-title-input {
   grid-area: 1 / 1 / 2 / 2;
@@ -437,13 +489,33 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   width: 100%;
   border: none;
   background: transparent;
-  border-bottom: 1px dashed var(--border-soft);
-  padding: 2px 0;
+  padding: 0;
   resize: none;
   overflow: hidden;
   white-space: pre-wrap;
   word-break: break-word;
+  color: inherit;
 }
+
+/* "Show more" toggle on a Theme's front — Type + Quest hide behind this by default, so only
+   the title-as-power-tag and the Power/Weakness tags take up space at a glance. */
+.theme-more-toggle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.68em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(58,44,28,0.06);
+  border: none;
+  border-radius: 6px;
+  padding: 4px;
+  margin-top: 6px;
+}
+.theme-more-toggle:hover { background: rgba(58,44,28,0.14); }
+.theme-more-body { margin-top: 8px; }
 
 .theme-type-input {
   width: 100%;
@@ -803,6 +875,37 @@ footer.credits {
   color: var(--ink-soft);
   padding: 18px 14px 4px;
   font-style: italic;
+}
+
+/* ---------- In-app confirm dialog (not the browser's native confirm()) ---------- */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(42, 32, 19, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.confirm-box {
+  background: linear-gradient(160deg, var(--parchment) 0%, var(--parchment-2) 100%);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 18px 20px;
+  max-width: 320px;
+  width: 100%;
+}
+.confirm-message {
+  font-size: 0.95em;
+  margin-bottom: 14px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .standalone-banner {
