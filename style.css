@@ -254,16 +254,18 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   perspective: 1600px;
 }
 
-/* Both faces are stacked in the SAME grid cell (instead of position:absolute) so the card's
-   height auto-grows to fit whichever face currently needs more room — a fixed height meant
-   "Show more" content (Type/Quest) either got clipped or forced an awkward second, nested
-   scrollbar inside an already-scrolling page. Grid stacking still overlaps the two faces (same
-   as absolute positioning did) but, unlike absolute positioning, both contribute to the
-   container's intrinsic height, so the card is always exactly as tall as its content needs. */
+/* Only the face currently showing determines the card's height; the other face is taken out
+   of flow (position: absolute) so it can't inflate an otherwise-compact card. Stacking BOTH
+   faces in the same grid cell (an earlier attempt at this fix) solved the old fixed-430px
+   clipping problem but sized the card to whichever face was TALLER at all times — so
+   collapsing "Show more" back down no longer shrank the card, it just left empty space where
+   the taller (usually the back, with 3 tracks + Special Upgrades) face's height was still being
+   reserved. Swapping which face is in-flow based on `.flipped` fixes that: the front's own
+   Show-more/Show-less state now directly controls the card's height when viewing the front, and
+   the back's own (fixed, track-driven) height takes over when flipped — never the max of both. */
 .theme-card-inner {
   position: relative;
   width: 100%;
-  display: grid;
   transition: transform 0.6s cubic-bezier(.4,.2,.2,1);
   transform-style: preserve-3d;
 }
@@ -272,9 +274,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 
 .theme-face {
-  grid-column: 1;
-  grid-row: 1;
-  min-height: 100%;
   backface-visibility: hidden;
   border-radius: 14px;
   border: 2px solid var(--border);
@@ -283,9 +282,25 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   background: linear-gradient(160deg, var(--parchment) 0%, var(--parchment-2) 100%);
 }
 
-.theme-face.back { transform: rotateY(180deg); pointer-events: none; }
-.theme-card.flipped .theme-face.front { pointer-events: none; }
-.theme-card.flipped .theme-face.back { pointer-events: auto; }
+.theme-face.front { position: relative; }
+.theme-face.back {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  transform: rotateY(180deg);
+  pointer-events: none;
+}
+.theme-card.flipped .theme-face.front {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  pointer-events: none;
+}
+.theme-card.flipped .theme-face.back {
+  position: relative;
+  overflow-y: visible;
+  pointer-events: auto;
+}
 
 /* Each Theme's front/back is tinted with a flat, muted version of its category color (the
    same --*-soft tokens used elsewhere) — solid color, no gradient/fade. */

@@ -60,6 +60,7 @@ const LABELS = {
     burnTitle: "Burn this tag",
     restoreTitle: "Restore this tag",
     removeTagTitle: "Remove tag",
+    removeTagConfirm: "Remove this tag?",
     showMore: "Show more",
     showLess: "Show less",
     removeTheme: "Delete",
@@ -163,6 +164,7 @@ const LABELS = {
     burnTitle: "Brucia questo attributo",
     restoreTitle: "Ripristina questo attributo",
     removeTagTitle: "Rimuovi attributo",
+    removeTagConfirm: "Rimuovere questo attributo?",
     showMore: "Mostra altro",
     showLess: "Mostra meno",
     removeTheme: "Elimina",
@@ -1279,9 +1281,11 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
         title: t("removeTagTitle"),
         "aria-label": t("removeTagTitle"),
         onclick: () => {
-          owner[kind] = owner[kind].filter((tg) => tg.id !== tag.id);
-          save();
-          rerender();
+          showConfirmDialog(t("removeTagConfirm"), () => {
+            owner[kind] = owner[kind].filter((tg) => tg.id !== tag.id);
+            save();
+            rerender();
+          });
         },
       });
       tagTrash.appendChild(trashIcon());
@@ -1879,9 +1883,20 @@ async function boot() {
     partyPlayers = await OBR.party.getPlayers();
 
     OBR.room.onMetadataChange((meta) => {
+      // OBR hands back a freshly-deserialized object graph on EVERY call, including no-op
+      // echoes of a save this very client just made — even for a key nobody actually changed.
+      // Swapping `roomMeta` in on a no-op silently replaces every nested object (character,
+      // company, ...) with a new-but-identical-looking instance. bindCharacter()/bindCompany()
+      // reuse an existing object across renders precisely to keep a mid-flight action (an open
+      // delete-confirm dialog, an in-progress edit) pointed at the live object — an unconditional
+      // swap here defeats that even without a visible re-render, since renderApp() only runs
+      // when `changed` is true: the mutation lands on an object roomMeta no longer references,
+      // save() persists the untouched replacement, and the action silently does nothing. Only
+      // replace roomMeta (and thus object identities) when the content actually differs.
       const changed = JSON.stringify(meta) !== JSON.stringify(roomMeta);
+      if (!changed) return;
       roomMeta = meta;
-      if (changed) renderApp();
+      renderApp();
     });
   } else {
     backend = "standalone";
