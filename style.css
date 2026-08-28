@@ -128,14 +128,29 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
    directly under the name input now sits at the bottom of the whole header block (see
    .sheet-header below), so an opened Background box appears above the divider, not below it. */
 .sheet-header { padding-bottom: 10px; border-bottom: 1px dashed var(--border-soft); }
-.sheet-header-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Never wraps — the Total Power cluster must stay on the same visual line as the name at every
+   width, including the compact 440px popover. The name input shrinks (down to its min-width
+   below) to make room instead of the cluster dropping to a second line. */
+.sheet-header-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .sheet-header-row .background-toggle { flex-shrink: 0; }
-.sheet-header-row .character-name-input { min-width: 90px; }
+.sheet-header-row .character-name-input { min-width: 60px; }
+
+/* Total Power chip + modifier + reset + Background, grouped as one unit and pushed to the far
+   right of the header row (margin-left: auto) so the name stays anchored left instead of the
+   controls just trailing right after it with empty space beyond them. Never shrinks or wraps —
+   see .sheet-header-row above — the name input gives way instead. */
+.header-power-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
 
 /* Total Power ("Potere Totale") cluster: a live-summed chip, a narrow manual +/- modifier, and a
-   reset button, sitting between the name and the Background toggle. flex-wrap on the row above
-   lets this whole cluster drop to its own line on narrow widths (the compact 440px popover)
-   instead of squeezing the name input down to nothing. */
+   reset button, sitting between the name and the Background toggle — always on the name's own
+   line (see .sheet-header-row above), even at the compact 440px popover width. */
 .total-power-chip {
   display: flex;
   align-items: baseline;
@@ -901,11 +916,29 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .list-row input[type="text"] {
   flex: 1;
+  /* Without this, the flex item's default auto min-width (its content-based intrinsic width)
+     refused to shrink below the browser's default text-input size — with a flame button, a tick
+     box, and a delete button all sharing the same ~230px masonry column, that pushed the row's
+     total content wider than the column and visibly overflowed past its right edge. */
+  min-width: 0;
   border: none;
   background: transparent;
   padding: 2px 0;
 }
-.list-row.used input[type="text"] { text-decoration: line-through; opacity: 0.55; }
+/* A burned item (spent for +3 Potere instead of ticked for +1, mirroring a Power tag) reads the
+   same as a burned tag pill elsewhere: struck through, faded, same muted parchment tint. */
+.list-row.burned { background: #d8cdb4; }
+.list-row.burned input[type="text"] { text-decoration: line-through; opacity: 0.55; }
+.list-row .flame {
+  font-size: 0.95em;
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.list-row .flame:hover { background: rgba(58,44,28,0.12); }
 .check-toggle {
   width: 20px;
   height: 20px;
