@@ -278,9 +278,16 @@ function openExpandedView() {
     // a full "https://…" URL sidesteps that entirely, and works regardless of where this is
     // deployed.
     const url = window.location.origin + window.location.pathname + "?view=expanded";
-    OBR.modal.open({ id: MODAL_ID, url, width: 1180, height: 820 });
+    // fullScreen instead of a fixed pixel width/height: the Themes grid already lays 4 cards
+    // out side-by-side once there's roughly 1000px of width to work with (auto-fit grid,
+    // minmax(230px,1fr)) — a fixed 1180px modal covers that on a big monitor but leaves no
+    // margin on a smaller one. fullScreen always gives the grid the whole window, so 4 Theme
+    // cards show in a row regardless of the player's screen size.
+    OBR.modal.open({ id: MODAL_ID, url, fullScreen: true });
   } else {
-    window.open(window.location.pathname + "?view=expanded", "mist-hero-sheet-expanded", "width=1180,height=820");
+    const w = Math.max(1180, window.screen.availWidth || 1180);
+    const h = Math.max(820, window.screen.availHeight || 820);
+    window.open(window.location.pathname + "?view=expanded", "mist-hero-sheet-expanded", `width=${w},height=${h}`);
   }
 }
 
