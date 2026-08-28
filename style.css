@@ -630,11 +630,12 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   padding: 6px 10px;
   margin-bottom: 8px;
 }
-.theme-title-pill.burned {
-  text-decoration: line-through;
-  opacity: 0.55;
-  background: #d8cdb4;
-}
+/* Burned reads as: the flame icon stays fully visible (it's what signals "burned" in the first
+   place — fading or crossing it out would fight that), only the title text itself is struck
+   through and faded. Same split now used for a burned Power/Weakness tag and a burned Backpack
+   item, so all three read the same way. */
+.theme-title-pill.burned { background: #d8cdb4; }
+.theme-title-pill.burned .theme-title-input { text-decoration: line-through; opacity: 0.55; }
 .theme-title-pill .flame {
   flex-shrink: 0;
   align-self: center;
@@ -745,11 +746,12 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .tag-pill:hover { background: var(--accent-soft); border-color: var(--accent); }
 .tag-pill.weakness { background: var(--weakness-soft); border-color: var(--weakness); }
-.tag-pill.burned {
-  text-decoration: line-through;
-  opacity: 0.55;
-  background: #d8cdb4;
-}
+/* Same split as a burned Theme title (and a burned Backpack item below): the flame icon stays
+   fully visible — it's the "burned" signal itself — and only the tag's own text is struck
+   through and faded, instead of the whole pill (icon included) going faded and crossed out. */
+.tag-pill.burned { background: #d8cdb4; }
+.tag-pill.burned .tag-text-input { text-decoration: line-through; opacity: 0.55; }
+.tag-pill.burned .tag-text-readonly { text-decoration: line-through; opacity: 0.55; }
 /* Same CSS-grid "replicated value" auto-grow-and-wrap trick as .theme-title-wrap: a plain
    <input> with a growing "size" attribute never wraps, so a long tag name just kept stretching
    the pill wider until it overflowed off the edge of the card and got clipped. flex:1/min-width:0
@@ -914,21 +916,16 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   break-inside: avoid;
   margin-bottom: 16px;
 }
-.list-row input[type="text"] {
-  flex: 1;
-  /* Without this, the flex item's default auto min-width (its content-based intrinsic width)
-     refused to shrink below the browser's default text-input size — with a flame button, a tick
-     box, and a delete button all sharing the same ~230px masonry column, that pushed the row's
-     total content wider than the column and visibly overflowed past its right edge. */
-  min-width: 0;
-  border: none;
-  background: transparent;
-  padding: 2px 0;
-}
+/* Backpack items share the exact same auto-grow-and-wrap .tag-text-wrap/.tag-text-input trick as
+   Theme tags (see the comment above .tag-text-wrap) — both for the wrapping behavior and because
+   a plain <input>'s text-decoration doesn't reliably render in every browser, which is exactly
+   why a burned item's strikethrough below wasn't showing up before. */
+.list-row .tag-text-wrap { min-width: 0; }
 /* A burned item (spent for +3 Potere instead of ticked for +1, mirroring a Power tag) reads the
-   same as a burned tag pill elsewhere: struck through, faded, same muted parchment tint. */
+   same as a burned tag pill elsewhere: struck through, faded, same muted parchment tint. Applied
+   directly to the textarea itself (not just the row) so it actually renders. */
 .list-row.burned { background: #d8cdb4; }
-.list-row.burned input[type="text"] { text-decoration: line-through; opacity: 0.55; }
+.list-row.burned .tag-text-input { text-decoration: line-through; opacity: 0.55; }
 .list-row .flame {
   font-size: 0.95em;
   border: none;

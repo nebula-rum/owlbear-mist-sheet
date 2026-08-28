@@ -1298,19 +1298,6 @@ function renderCategoryPicker(theme, save, rerender) {
 function renderThemeTitlePill(theme, save, rerender) {
   const pill = el("div", { class: "theme-title-pill" + (theme.titleBurned ? " burned" : "") });
 
-  // The title is itself a Power tag, so it ticks toward Total Power (+1) exactly like one — see
-  // computeTotalPower(). Burning it (below) counts +3 instead and ticks it automatically.
-  pill.appendChild(
-    tickToggle(rollSelection.has(theme.id), t("tickPowerTitle"), () => {
-      if (rollSelection.has(theme.id)) rollSelection.delete(theme.id);
-      else rollSelection.add(theme.id);
-      // A tick changes the Total Power number shown in the header, which lives outside this
-      // card — replaceThemeCard() only swaps this one card's DOM, so it would never pick up the
-      // new tally. refreshTabContent() rebuilds the whole tab (header included) instead.
-      refreshTabContent();
-    })
-  );
-
   const flameBtn = el("button", {
     class: "flame",
     title: theme.titleBurned ? t("restoreTitle") : t("burnTitle"),
@@ -1351,6 +1338,21 @@ function renderThemeTitlePill(theme, save, rerender) {
     )
   );
   pill.appendChild(wrap);
+
+  // The title is itself a Power tag, so it ticks toward Total Power (+1) exactly like one — see
+  // computeTotalPower(). Burning it (above) counts +3 instead and ticks it automatically. Sits
+  // right-aligned at the end of the pill — the title pill has no delete button to sit next to,
+  // but every other tick in this app sits at the right edge of its row, so this matches that.
+  pill.appendChild(
+    tickToggle(rollSelection.has(theme.id), t("tickPowerTitle"), () => {
+      if (rollSelection.has(theme.id)) rollSelection.delete(theme.id);
+      else rollSelection.add(theme.id);
+      // A tick changes the Total Power number shown in the header, which lives outside this
+      // card — replaceThemeCard() only swaps this one card's DOM, so it would never pick up the
+      // new tally. refreshTabContent() rebuilds the whole tab (header included) instead.
+      refreshTabContent();
+    })
+  );
 
   return pill;
 }
@@ -1495,26 +1497,6 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
   owner[kind].forEach((tag) => {
     const pill = el("div", { class: "tag-pill" + (kind === "weakness" ? " weakness" : "") + (tag.burned ? " burned" : "") });
 
-    // Personal Theme tags tick toward Total Power (+1 Power / -1 Weakness, +3 to burn a Power
-    // tag); the shared Company Theme's tags don't — different fiction (crossed on use, never
-    // burned for Potere) and no per-character Potere tally to feed there. See computeTotalPower().
-    // Sits on the left, before the flame — matching the Theme title pill's tick placement.
-    if (opts.tickPower) {
-      pill.appendChild(
-        tickToggle(
-          rollSelection.has(tag.id),
-          kind === "weakness" ? t("tickWeaknessTitle") : t("tickPowerTitle"),
-          () => {
-            if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
-            else rollSelection.add(tag.id);
-            // Same reasoning as the Theme-title tick: this changes the Total Power number in
-            // the header, which the narrower replaceThemeCard() rerender() never touches.
-            refreshTabContent();
-          }
-        )
-      );
-    }
-
     const flameBtn = el("button", {
       class: "flame",
       title: tag.burned ? crossTitleOff : crossTitleOn,
@@ -1567,6 +1549,27 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
         )
       );
       pill.appendChild(textWrap);
+
+      // Personal Theme tags tick toward Total Power (+1 Power / -1 Weakness, +3 to burn a Power
+      // tag); the shared Company Theme's tags don't — different fiction (crossed on use, never
+      // burned for Potere) and no per-character Potere tally to feed there. See
+      // computeTotalPower(). Right-aligned: sits at the end of the pill, right before delete —
+      // matching every other tick box in this app (and now the Theme title's too).
+      if (opts.tickPower) {
+        pill.appendChild(
+          tickToggle(
+            rollSelection.has(tag.id),
+            kind === "weakness" ? t("tickWeaknessTitle") : t("tickPowerTitle"),
+            () => {
+              if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
+              else rollSelection.add(tag.id);
+              // Same reasoning as the Theme-title tick: this changes the Total Power number in
+              // the header, which the narrower replaceThemeCard() rerender() never touches.
+              refreshTabContent();
+            }
+          )
+        );
+      }
 
       const tagTrash = el("button", {
         class: "chip-trash",
@@ -1742,14 +1745,29 @@ function renderBackpackSection(character, save) {
       flameBtn.appendChild(clawIcon());
     }
     row.appendChild(flameBtn);
-    row.appendChild(
-      el("input", {
-        type: "text",
-        placeholder: t("itemPlaceholder"),
-        value: item.text,
-        oninput: (e) => { item.text = e.target.value; save(); },
-      })
+    // A plain <input>'s text-decoration doesn't reliably render in every browser (it silently
+    // does nothing in some), so a burned item's strikethrough was invisible there even though a
+    // burned Power tag's was fine — tags use a <textarea>, not an <input>. Reusing that same
+    // .tag-text-wrap/.tag-text-input trick here (rather than inventing a separate technique)
+    // makes the burned look actually render, and picks up long-name wrapping as a side benefit.
+    const itemTextWrap = el("div", { class: "tag-text-wrap", "data-replicated-value": item.text });
+    itemTextWrap.appendChild(
+      el(
+        "textarea",
+        {
+          class: "tag-text-input",
+          rows: "1",
+          placeholder: t("itemPlaceholder"),
+          oninput: (e) => {
+            item.text = e.target.value;
+            itemTextWrap.setAttribute("data-replicated-value", e.target.value);
+            save();
+          },
+        },
+        item.text
+      )
     );
+    row.appendChild(itemTextWrap);
     // Tick sits right before the delete button, at the end of the row.
     row.appendChild(
       tickToggle(rollSelection.has(item.id), t("tickItemTitle"), () => {
