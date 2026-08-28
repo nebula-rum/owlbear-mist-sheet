@@ -28,14 +28,30 @@
 
 * { box-sizing: border-box; }
 
-html, body {
+/* The two corner gradients are a subtle decorative vignette meant to frame the visible window,
+   not something tied to how tall the sheet's content is. Painted with `background-attachment:
+   fixed` on body alone (not also on html) so it's pinned to the viewport: previously both html
+   and body separately painted the same gradient sized to their own (different, content-height-
+   dependent) box, so once the sheet grew taller than one screenful, the "bottom right" shading
+   landed wherever the shorter box happened to end — partway down the page, right around
+   Backpack/Notes on a character with a few Themes/tags/items — with a visible seam where it
+   handed off to the taller box's separately-computed copy of the same gradient below it. Fixed
+   attachment means there's only one gradient, it always sits in the actual visible corners, and
+   it never leaves a seam no matter how long the sheet gets. */
+html {
   margin: 0;
   padding: 0;
-  height: 100%;
+  background: var(--parchment);
+}
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
   background:
     radial-gradient(ellipse at top left, rgba(255,255,255,0.25), transparent 60%),
     radial-gradient(ellipse at bottom right, rgba(0,0,0,0.06), transparent 60%),
     var(--parchment);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: "EB Garamond", Georgia, serif;
 }
@@ -112,8 +128,61 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
    directly under the name input now sits at the bottom of the whole header block (see
    .sheet-header below), so an opened Background box appears above the divider, not below it. */
 .sheet-header { padding-bottom: 10px; border-bottom: 1px dashed var(--border-soft); }
-.sheet-header-row { display: flex; align-items: center; gap: 8px; }
+.sheet-header-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sheet-header-row .background-toggle { flex-shrink: 0; }
+.sheet-header-row .character-name-input { min-width: 90px; }
+
+/* Total Power ("Potere Totale") cluster: a live-summed chip, a narrow manual +/- modifier, and a
+   reset button, sitting between the name and the Background toggle. flex-wrap on the row above
+   lets this whole cluster drop to its own line on narrow widths (the compact 440px popover)
+   instead of squeezing the name input down to nothing. */
+.total-power-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-shrink: 0;
+  background: var(--parchment-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 4px 10px;
+}
+.total-power-label {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.68em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.total-power-value {
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--accent);
+  min-width: 1.1em;
+  text-align: right;
+}
+.power-modifier-input {
+  flex-shrink: 0;
+  width: 3ch;
+  text-align: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--parchment-3);
+  padding: 4px 2px;
+  font-size: 0.9em;
+  color: var(--ink);
+  /* Hide the native up/down spin buttons — at this width they crowded out the digit itself
+     (a "-1" became invisible behind the spinner arrows). Typing, and the keyboard up/down
+     arrows, still work without them. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.power-modifier-input::-webkit-outer-spin-button,
+.power-modifier-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.power-reset-btn { flex-shrink: 0; }
 .character-name-input {
   font-family: "Cinzel", Georgia, serif;
   font-size: 1.35em;
@@ -846,6 +915,43 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   flex-shrink: 0;
 }
 .check-toggle.checked { background: var(--sage); border-color: var(--sage); }
+
+/* Small square tick control for the Total Power tally — same visual language as .check-toggle
+   (Backpack's "used" box) but sized to sit inline inside a tag pill/chip/status row alongside a
+   flame button, so it's noticeably smaller. Ticking means "count this toward Total Power for the
+   upcoming roll" — purely a scratch/local marker, never persisted. */
+.tick-toggle {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 2px solid var(--border);
+  background: transparent;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.tick-toggle.checked { background: var(--sage); border-color: var(--sage); }
+.tick-toggle:hover { border-color: var(--accent); }
+
+/* Status polarity ("+"/"−"): does this Status help or hurt the roll when active? Two flat color
+   states rather than the category palette, since polarity is independent of the Status's color. */
+.status-polarity-toggle {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  line-height: 1;
+  font-weight: 700;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.status-polarity-toggle.positive { background: var(--sage-soft); color: var(--sage); }
+.status-polarity-toggle.negative { background: var(--weakness-soft); color: var(--weakness); }
+.status-polarity-toggle:hover { filter: brightness(0.92); }
 
 /* ---------- Active Tags (Tags + Statuses) ---------- */
 

@@ -128,6 +128,18 @@ const LABELS = {
 
     mySheetPickerHint: "You have more than one character — choose which to view:",
     waitingForCharacter: "Your GM hasn't given you a character yet.",
+
+    tickPowerTitle: "Count toward Total Power",
+    tickWeaknessTitle: "Count toward Total Power (-1)",
+    tickActiveTagTitle: "Count toward Total Power",
+    tickStatusPositiveTitle: "Count toward Total Power (best positive Status)",
+    tickStatusNegativeTitle: "Count toward Total Power (worst negative Status)",
+    statusPolarityPositiveTitle: "Helps the roll (click to make it hurt instead)",
+    statusPolarityNegativeTitle: "Hurts the roll (click to make it help instead)",
+    totalPowerTitle: "Total Power for the upcoming roll",
+    totalPowerLabel: "Power",
+    powerModifierTitle: "Manual modifier (Favored/Disfavored, GM-granted tags…)",
+    resetPowerTitle: "Reset Total Power tally",
   },
   it: {
     standaloneBanner: "Modalità anteprima locale (non collegata a Owlbear Rodeo) — i dati sono salvati solo in questo browser.",
@@ -232,6 +244,18 @@ const LABELS = {
 
     mySheetPickerHint: "Hai più di un personaggio — scegli quale visualizzare:",
     waitingForCharacter: "Il tuo Narratore non ti ha ancora assegnato un personaggio.",
+
+    tickPowerTitle: "Conta per il Potere Totale",
+    tickWeaknessTitle: "Conta per il Potere Totale (-1)",
+    tickActiveTagTitle: "Conta per il Potere Totale",
+    tickStatusPositiveTitle: "Conta per il Potere Totale (miglior Stato positivo)",
+    tickStatusNegativeTitle: "Conta per il Potere Totale (peggior Stato negativo)",
+    statusPolarityPositiveTitle: "Aiuta il tiro (clicca per farlo ostacolare)",
+    statusPolarityNegativeTitle: "Ostacola il tiro (clicca per farlo aiutare)",
+    totalPowerTitle: "Potere Totale per il prossimo tiro",
+    totalPowerLabel: "Potere",
+    powerModifierTitle: "Modificatore manuale (Favorito/Sfavorito, attributi concessi dal Narratore…)",
+    resetPowerTitle: "Azzera il conteggio del Potere",
   },
 };
 
@@ -391,6 +415,30 @@ function collapseIcon() {
   );
 }
 
+// Single counter-clockwise arrow — the Total Power "Reset" button (distinct from flipIcon's
+// two-arrow loop, which means something else already: flipping a Theme card).
+function resetIcon() {
+  return svgIcon(
+    [
+      ["path", { d: "M3 12a9 9 0 1 0 3-6.7" }],
+      ["polyline", { points: "3 3 3 8 8 8" }],
+    ],
+    { size: 14, strokeWidth: 2.2 }
+  );
+}
+
+// Small square tick control — "count this toward the Total Power tally for the upcoming roll."
+// Same interaction/visual language as Backpack's .check-toggle, just usable anywhere (tag pills,
+// Active Tags, Statuses, the Theme title pill) via its own class.
+function tickToggle(checked, title, onclick) {
+  return el("button", {
+    class: "tick-toggle" + (checked ? " checked" : ""),
+    title,
+    "aria-label": title,
+    onclick,
+  });
+}
+
 // An open book — used for the Background toggle button. Tried a rolled-scroll glyph first, but
 // at icon size it read as an ambiguous blob rather than "story"; an open book reads immediately
 // even small. Two curved-spine pages (the well-known "book-open" glyph shape).
@@ -416,6 +464,17 @@ let expandedRosterId = null; // which character is expanded in the Roster tab (o
 const expandedBackgroundIds = new Set(); // which characters have their Background box open
 const expandedThemeExtraIds = new Set(); // which Theme cards have their "Show more" (Type/Quest) open
 let partyPlayers = []; // [{id, name, role, metadata}] — everyone except self
+
+// ---------- Total Power tally (scratch state for "the upcoming roll", not synced) ----------
+// Ticking a tag/status to count it toward Potere is a per-viewer, per-roll working note, not
+// real character data — like flippedThemeIds/expandedThemeExtraIds below, it resets on reload
+// and is never written to room metadata. Only tag.burned and a Status's polarity are persisted.
+// Tag/theme/status ids are already globally unique (uid()), so a plain Set of ticked ids is safe
+// even with multiple characters open at once (e.g. GM's Roster + a player's own Hero tab) — the
+// Reset button just needs to delete the specific ids belonging to the character it was clicked
+// on (see resetTotalPower()), not the whole Set.
+const rollSelection = new Set();
+const rollModifiers = new Map(); // characterId -> manual +/- modifier, default 0
 
 function isGM() {
   // Outside Owlbear there's no room/role concept, so GM-only tabs stay visible in
@@ -664,14 +723,18 @@ function defaultCharacter(id) {
 function normalizeStatus(raw) {
   const id = raw && raw.id ? raw.id : uid();
   const name = raw && typeof raw.name === "string" ? raw.name : "";
+  // Whether this Status helps (+level) or hurts (-level) the Potere tally when ticked active —
+  // defaults to positive for both new Statuses and any saved before this field existed, since
+  // there's no way to infer polarity from old data; correct via the status-polarity toggle.
+  const polarity = raw && raw.polarity === "negative" ? "negative" : "positive";
   if (raw && Array.isArray(raw.boxes)) {
     const boxes = raw.boxes.slice(0, 6).map(Boolean);
     while (boxes.length < 6) boxes.push(false);
-    return { id, name, boxes };
+    return { id, name, boxes, polarity };
   }
   // Migrate the old {level: N} shape (a simple 1..N counter) into boxes 1..N filled.
   const legacyLevel = raw && typeof raw.level === "number" ? raw.level : 0;
-  return { id, name, boxes: Array.from({ length: 6 }, (_, i) => i < legacyLevel) };
+  return { id, name, boxes: Array.from({ length: 6 }, (_, i) => i < legacyLevel), polarity };
 }
 
 function normalizeCharacter(raw, id) {
@@ -712,6 +775,59 @@ function bindCharacter(id) {
   const character = existing && existing.id === id ? existing : getCharacter(id);
   roomMeta[key] = character;
   return { character, save: () => scheduleRoomSave(key) };
+}
+
+// ---------- Total Power tally ----------
+// Straight from Legend in the Mist Vol. I, p.151 "Calcola il Potere dell'Azione": +1 per
+// activated Power tag, -1 per activated Weakness tag, +3 (instead of the tag's own +1) for
+// burning one Power tag, and +/- the LEVEL of only the single best positive and single worst
+// negative active Status (never a flat +1, never summed across every active Status). The
+// Favored/Disfavored +/-3 or +/-6 from Valore isn't something the sheet can know on its own, so
+// that (and any GM-granted extras) goes through the manual modifier instead.
+function computeTotalPower(character) {
+  let total = 0;
+
+  character.themes.forEach((theme) => {
+    // The Theme's title is itself a Power tag (see renderThemeTitlePill).
+    if (rollSelection.has(theme.id)) total += theme.titleBurned ? 3 : 1;
+    theme.power.forEach((tag) => {
+      if (rollSelection.has(tag.id)) total += tag.burned ? 3 : 1;
+    });
+    theme.weakness.forEach((tag) => {
+      if (rollSelection.has(tag.id)) total -= 1;
+    });
+  });
+
+  character.tags.forEach((tag) => {
+    if (rollSelection.has(tag.id)) total += 1;
+  });
+
+  let bestPositive = 0;
+  let worstNegative = 0;
+  character.statuses.forEach((s) => {
+    if (!rollSelection.has(s.id)) return;
+    const level = s.boxes.lastIndexOf(true) + 1; // highest ticked box = current level; 0 if none
+    if (level <= 0) return;
+    if (s.polarity === "negative") worstNegative = Math.max(worstNegative, level);
+    else bestPositive = Math.max(bestPositive, level);
+  });
+  total += bestPositive - worstNegative;
+
+  total += rollModifiers.get(character.id) || 0;
+  return total;
+}
+
+// Un-ticks every id belonging to this specific character (not the whole rollSelection Set, so a
+// GM mid-tally on a different Roster character isn't affected) and clears its modifier.
+function resetTotalPower(character) {
+  character.themes.forEach((theme) => {
+    rollSelection.delete(theme.id);
+    theme.power.forEach((tag) => rollSelection.delete(tag.id));
+    theme.weakness.forEach((tag) => rollSelection.delete(tag.id));
+  });
+  character.tags.forEach((tag) => rollSelection.delete(tag.id));
+  character.statuses.forEach((s) => rollSelection.delete(s.id));
+  rollModifiers.delete(character.id);
 }
 
 // ---------- roster (GM-managed index of characters) ----------
@@ -965,10 +1081,11 @@ function renderCharacterSheet(character, save) {
 }
 
 // ---------- Name + Background (collapsible free-form character story) ----------
-// The Background toggle sits to the left of the name, as a small scroll-icon button rather than
+// The Background toggle sits on the right of the name, as a small book-icon button rather than
 // a spelled-out label — and the dashed divider that used to sit directly under the name input
 // now sits at the bottom of this whole block, so an opened Background text box appears above the
-// divider (inside the header), not as its own separate section below it.
+// divider (inside the header), not as its own separate section below it. Also holds the Total
+// Power chip + manual modifier + reset, between the name and the Background toggle.
 
 function renderNameAndBackgroundSection(character, save) {
   const isOpen = expandedBackgroundIds.has(character.id);
@@ -984,6 +1101,49 @@ function renderNameAndBackgroundSection(character, save) {
       oninput: (e) => { character.name = e.target.value; save(); },
     })
   );
+
+  // Total Power: a live tally of everything ticked (Power/Weakness tags, the Theme title,
+  // Active Tags, best/worst Status) plus a manual +/- modifier for Favored/Disfavored and other
+  // GM-granted extras the sheet can't infer on its own. All scratch state for "the roll about to
+  // happen" (see the rollSelection/rollModifiers comment) — Reset clears it without touching any
+  // permanent data (tag.burned, Status polarity/levels stay exactly as they are).
+  const powerChip = el("div", { class: "total-power-chip", title: t("totalPowerTitle") });
+  powerChip.appendChild(el("span", { class: "total-power-label", text: t("totalPowerLabel") }));
+  const powerValueEl = el("span", { class: "total-power-value", text: String(computeTotalPower(character)) });
+  powerChip.appendChild(powerValueEl);
+  row.appendChild(powerChip);
+
+  // Updates just the number in place instead of a full refreshTabContent() re-render, which
+  // would tear down and rebuild this very input on every keystroke and throw away focus/cursor
+  // position after each digit typed.
+  row.appendChild(
+    el("input", {
+      class: "power-modifier-input",
+      type: "number",
+      title: t("powerModifierTitle"),
+      "aria-label": t("powerModifierTitle"),
+      value: String(rollModifiers.get(character.id) || 0),
+      oninput: (e) => {
+        const n = parseInt(e.target.value, 10);
+        if (Number.isNaN(n)) rollModifiers.delete(character.id);
+        else rollModifiers.set(character.id, n);
+        powerValueEl.textContent = String(computeTotalPower(character));
+      },
+    })
+  );
+
+  const resetBtn = el("button", {
+    class: "icon-btn-round power-reset-btn",
+    title: t("resetPowerTitle"),
+    "aria-label": t("resetPowerTitle"),
+    onclick: () => {
+      resetTotalPower(character);
+      refreshTabContent();
+    },
+  });
+  resetBtn.appendChild(resetIcon());
+  row.appendChild(resetBtn);
+
   const bgToggle = el("button", {
     class: "icon-btn-round background-toggle",
     title: t("backgroundTitle"),
@@ -1097,13 +1257,32 @@ function renderCategoryPicker(theme, save, rerender) {
 function renderThemeTitlePill(theme, save, rerender) {
   const pill = el("div", { class: "theme-title-pill" + (theme.titleBurned ? " burned" : "") });
 
+  // The title is itself a Power tag, so it ticks toward Total Power (+1) exactly like one — see
+  // computeTotalPower(). Burning it (below) counts +3 instead and ticks it automatically.
+  pill.appendChild(
+    tickToggle(rollSelection.has(theme.id), t("tickPowerTitle"), () => {
+      if (rollSelection.has(theme.id)) rollSelection.delete(theme.id);
+      else rollSelection.add(theme.id);
+      // A tick changes the Total Power number shown in the header, which lives outside this
+      // card — replaceThemeCard() only swaps this one card's DOM, so it would never pick up the
+      // new tally. refreshTabContent() rebuilds the whole tab (header included) instead.
+      refreshTabContent();
+    })
+  );
+
   const flameBtn = el("button", {
     class: "flame",
     title: theme.titleBurned ? t("restoreTitle") : t("burnTitle"),
     onclick: () => {
       theme.titleBurned = !theme.titleBurned;
+      // Burning ticks it (so it immediately reads as the +3 it now is); recovering un-ticks it
+      // so it doesn't linger miscounted as a stray +1 after the burn is undone.
+      if (theme.titleBurned) rollSelection.add(theme.id);
+      else rollSelection.delete(theme.id);
       save();
-      rerender();
+      // Same reasoning as the tick handler above: this also changes Total Power, which lives in
+      // the header outside this card.
+      refreshTabContent();
     },
   });
   if (theme.titleBurned) {
@@ -1194,10 +1373,10 @@ function renderThemeFront(character, save, theme, cardNode) {
   body.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme)));
 
   body.appendChild(
-    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
+    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { hideHeader: true, tickPower: true })
   );
   body.appendChild(
-    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
+    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true, tickPower: true })
   );
 
   // Quest is secondary info (checked occasionally, not every beat of play), so in the compact
@@ -1275,13 +1454,40 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
   owner[kind].forEach((tag) => {
     const pill = el("div", { class: "tag-pill" + (kind === "weakness" ? " weakness" : "") + (tag.burned ? " burned" : "") });
 
+    // Personal Theme tags tick toward Total Power (+1 Power / -1 Weakness, +3 to burn a Power
+    // tag); the shared Company Theme's tags don't — different fiction (crossed on use, never
+    // burned for Potere) and no per-character Potere tally to feed there. See computeTotalPower().
+    if (opts.tickPower) {
+      pill.appendChild(
+        tickToggle(
+          rollSelection.has(tag.id),
+          kind === "weakness" ? t("tickWeaknessTitle") : t("tickPowerTitle"),
+          () => {
+            if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
+            else rollSelection.add(tag.id);
+            // Same reasoning as the Theme-title tick above: this changes the Total Power number
+            // in the header, which the narrower replaceThemeCard() rerender() never touches.
+            refreshTabContent();
+          }
+        )
+      );
+    }
+
     const flameBtn = el("button", {
       class: "flame",
       title: tag.burned ? crossTitleOff : crossTitleOn,
       onclick: () => {
         tag.burned = !tag.burned;
+        if (opts.tickPower) {
+          // Burning ticks it (reads as the +3 it now is); recovering un-ticks it so it doesn't
+          // linger miscounted as a stray +1 once the burn is undone.
+          if (tag.burned) rollSelection.add(tag.id);
+          else rollSelection.delete(tag.id);
+        }
         save();
-        rerender();
+        // tickPower tags affect the header's Total Power display; the Company Theme's tags
+        // (opts.tickPower unset) don't, but a full refresh is harmless for them either way.
+        opts.tickPower ? refreshTabContent() : rerender();
       },
     });
     if (tag.burned) {
@@ -1548,6 +1754,16 @@ function renderActiveTagsSection(character, save) {
 
   character.tags.forEach((tag) => {
     const chip = el("div", { class: "active-tag-chip " + tagColorClass });
+    // Active Tags are this app's own generic marker (not a specific rulebook Attributo type), so
+    // they tick a flat +1 toward Total Power — no burn, no polarity, unlike Theme Power/Weakness
+    // tags and Statuses. See computeTotalPower().
+    chip.appendChild(
+      tickToggle(rollSelection.has(tag.id), t("tickActiveTagTitle"), () => {
+        if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
+        else rollSelection.add(tag.id);
+        refreshTabContent();
+      })
+    );
     chip.appendChild(
       el("input", {
         type: "text",
@@ -1576,6 +1792,40 @@ function renderActiveTagsSection(character, save) {
   character.statuses.forEach((s) => {
     const card = el("div", { class: "status-card " + statusColorClass });
     const topRow = el("div", { class: "status-top-row" });
+
+    // Only the single best positive and single worst negative active Status count toward Total
+    // Power (per the rulebook), so ticking one un-ticks any other already-ticked Status of the
+    // same polarity — radio-style, matching how the math actually works instead of letting the
+    // player tick several and wonder why only one seems to count. See computeTotalPower().
+    topRow.appendChild(
+      tickToggle(
+        rollSelection.has(s.id),
+        s.polarity === "negative" ? t("tickStatusNegativeTitle") : t("tickStatusPositiveTitle"),
+        () => {
+          if (rollSelection.has(s.id)) {
+            rollSelection.delete(s.id);
+          } else {
+            character.statuses.forEach((other) => {
+              if (other.id !== s.id && other.polarity === s.polarity) rollSelection.delete(other.id);
+            });
+            rollSelection.add(s.id);
+          }
+          refreshTabContent();
+        }
+      )
+    );
+    topRow.appendChild(
+      el("button", {
+        class: "status-polarity-toggle " + (s.polarity === "negative" ? "negative" : "positive"),
+        title: s.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
+        text: s.polarity === "negative" ? "−" : "+",
+        onclick: () => {
+          s.polarity = s.polarity === "negative" ? "positive" : "negative";
+          save();
+          refreshTabContent();
+        },
+      })
+    );
     topRow.appendChild(
       el("input", {
         type: "text",
