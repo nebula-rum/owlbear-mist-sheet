@@ -1296,19 +1296,29 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
     if (readOnly) {
       pill.appendChild(el("span", { class: "tag-text-readonly", text: tag.text || "…" }));
     } else {
-      pill.appendChild(
-        el("input", {
-          type: "text",
-          value: tag.text,
-          size: String(Math.max(8, tag.text.length + 2)),
-          placeholder: kind === "weakness" ? t("weaknessPlaceholder") : t("powerPlaceholder"),
-          oninput: (e) => {
-            tag.text = e.target.value;
-            e.target.size = Math.max(8, e.target.value.length + 2);
-            save();
+      // Same CSS-grid "replicated value" auto-grow-and-wrap trick as the Theme title (see
+      // renderThemeTitlePill): a plain <input> with a growing "size" attribute just kept
+      // stretching the pill wider and wider off the edge of the card for a long tag name,
+      // clipped by the card's overflow instead of wrapping. A <textarea> wraps; the hidden
+      // ::after sized off the same text drives the grid row's height to match.
+      const textWrap = el("div", { class: "tag-text-wrap", "data-replicated-value": tag.text });
+      textWrap.appendChild(
+        el(
+          "textarea",
+          {
+            class: "tag-text-input",
+            rows: "1",
+            placeholder: kind === "weakness" ? t("weaknessPlaceholder") : t("powerPlaceholder"),
+            oninput: (e) => {
+              tag.text = e.target.value;
+              textWrap.setAttribute("data-replicated-value", e.target.value);
+              save();
+            },
           },
-        })
+          tag.text
+        )
       );
+      pill.appendChild(textWrap);
       const tagTrash = el("button", {
         class: "chip-trash",
         title: t("removeTagTitle"),

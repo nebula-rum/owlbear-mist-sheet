@@ -649,6 +649,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
   background: var(--parchment-3);
   border: 1px solid var(--border-soft);
   border-radius: 20px;
@@ -665,12 +666,36 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   opacity: 0.55;
   background: #d8cdb4;
 }
-.tag-pill input {
+/* Same CSS-grid "replicated value" auto-grow-and-wrap trick as .theme-title-wrap: a plain
+   <input> with a growing "size" attribute never wraps, so a long tag name just kept stretching
+   the pill wider until it overflowed off the edge of the card and got clipped. flex:1/min-width:0
+   lets this shrink within the pill's row instead of forcing the pill wider; the hidden ::after
+   (sized off the same text) drives the grid row's height to match the wrapped line count. */
+.tag-text-wrap {
+  flex: 1;
+  min-width: 4ch;
+  display: grid;
+  font-size: 1em;
+}
+.tag-text-wrap::after {
+  content: attr(data-replicated-value) " ";
+  grid-area: 1 / 1 / 2 / 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  visibility: hidden;
+}
+.tag-text-wrap > .tag-text-input {
+  grid-area: 1 / 1 / 2 / 2;
+  font: inherit;
+  width: 100%;
   border: none;
   background: transparent;
   padding: 0;
-  font-size: 1em;
-  min-width: 4ch;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
 }
 .tag-pill .flame {
   font-size: 0.95em;
@@ -783,7 +808,17 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 
 /* ---------- Backpack / statuses / notes ---------- */
 
-.list-rows { display: flex; flex-direction: column; gap: 6px; }
+/* Same column width/gap as .themes-grid, so Backpack items line up with the Theme cards above
+   them and fill up to 4 per row. CSS multi-column instead of CSS grid: a plain grid gives every
+   item in a row the same row height (the tallest item in that row), so a shorter neighbor next
+   to a taller one leaves visible empty space beneath it before the next row starts. Columns
+   pack each item directly under the one above it in the same column instead — true masonry,
+   no gaps — at the cost of reading order going down each column before across (acceptable for
+   a short, freely-orderable item list like this). */
+.list-rows {
+  column-width: 230px;
+  column-gap: 16px;
+}
 .list-row {
   display: flex;
   align-items: center;
@@ -792,6 +827,8 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 6px 8px;
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 .list-row input[type="text"] {
   flex: 1;
@@ -814,7 +851,15 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 
 .title-buttons { display: flex; gap: 6px; flex-shrink: 0; }
 
-.active-tags-list { display: flex; flex-direction: column; gap: 8px; }
+/* Same column width as .themes-grid — Tags and Statuses share one masonry layout, up to 4
+   columns wide. CSS multi-column rather than CSS grid: a Status card (6 boxes) is noticeably
+   taller than a plain Tag chip, and a uniform-row-height grid left visible empty space under
+   every shorter chip sharing a row with a taller status. Columns stack each item directly under
+   the one above it instead, so there's never a gap — see the longer note on .list-rows above. */
+.active-tags-list {
+  column-width: 230px;
+  column-gap: 16px;
+}
 
 .active-tag-chip {
   display: flex;
@@ -823,6 +868,8 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   border: 1px solid var(--border-soft);
   border-radius: 20px;
   padding: 5px 6px 5px 14px;
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 .active-tag-chip input {
   flex: 1;
@@ -841,6 +888,8 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 8px 10px;
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 .status-card.color-amber { background: var(--amber-soft); border-color: var(--amber); }
 .status-card.color-teal { background: var(--teal-soft); border-color: var(--teal); }
@@ -923,7 +972,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 
 .gm-full-line { font-size: 0.85em; color: var(--ink); margin: 2px 0 10px; font-style: italic; }
 
-.tag-text-readonly { font-size: 1em; padding: 0 2px; }
+.tag-text-readonly { font-size: 1em; padding: 0 2px; word-break: break-word; }
 
 /* ---------- Roster tab (GM only) ---------- */
 
