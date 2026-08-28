@@ -107,20 +107,26 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 
 /* Character name field now lives inside the sheet content itself (a character sheet is no
-   longer a single app-wide concept — My Sheet/Roster can show different characters). */
+   longer a single app-wide concept — My Sheet/Roster can show different characters). The
+   Background toggle sits to its left, on the same row; the dashed divider that used to sit
+   directly under the name input now sits at the bottom of the whole header block (see
+   .sheet-header below), so an opened Background box appears above the divider, not below it. */
+.sheet-header { padding-bottom: 10px; border-bottom: 1px dashed var(--border-soft); }
+.sheet-header-row { display: flex; align-items: center; gap: 8px; }
+.sheet-header-row .background-toggle { flex-shrink: 0; }
 .character-name-input {
   font-family: "Cinzel", Georgia, serif;
   font-size: 1.35em;
   font-weight: 700;
   background: transparent;
   border: none;
-  border-bottom: 1px dashed var(--border-soft);
   color: var(--ink);
   padding: 2px 2px;
   width: 100%;
+  min-width: 0;
 }
 .character-name-input::placeholder { color: var(--ink-soft); }
-.character-name-input:focus { outline: none; border-bottom-color: var(--accent); }
+.character-name-input:focus { outline: none; }
 
 .lang-toggle {
   flex-shrink: 0;
@@ -278,9 +284,13 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   border-radius: 14px;
   border: 2px solid var(--border);
   box-shadow: var(--shadow-lg);
-  padding: 12px 14px;
+  overflow: hidden;
   background: linear-gradient(160deg, var(--parchment) 0%, var(--parchment-2) 100%);
 }
+
+/* Everything below the banner keeps the card's inner padding; the banner itself spans edge to
+   edge, so it needs to sit outside that padding. */
+.theme-face-body { padding: 12px 14px; }
 
 .theme-face.front { position: relative; }
 .theme-face.back {
@@ -309,6 +319,68 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .theme-face.color-violet { border-color: var(--violet); background: var(--violet-soft); }
 .theme-face.color-rose { border-color: var(--rose); background: var(--rose-soft); }
 .theme-face.color-sage { border-color: var(--sage); background: var(--sage-soft); }
+
+/* Full-width banner across the top of the card — solid category color (so the color alone
+   communicates the category; the picker itself lives on the back now, see .theme-back-footer).
+   Left side is the player-editable Theme Type field (was hidden behind "Show more" before, now
+   always visible); right side holds the front's add-Power/add-Weakness/flip actions, or on the
+   back just flip. */
+.theme-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  color: #fff;
+}
+.theme-banner.color-amber { background: var(--amber); }
+.theme-banner.color-teal { background: var(--teal); }
+.theme-banner.color-violet { background: var(--violet); }
+.theme-banner.color-rose { background: var(--rose); }
+.theme-banner.color-sage { background: var(--sage); }
+.theme-banner.no-category { background: var(--ink-soft); }
+
+.theme-banner .banner-type-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.72em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+.theme-banner .banner-type-input::placeholder {
+  color: rgba(255,255,255,0.75);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: "EB Garamond", Georgia, serif;
+}
+.theme-banner .banner-type-input:hover,
+.theme-banner .banner-type-input:focus { background: rgba(255,255,255,0.18); outline: none; }
+.theme-banner .banner-type-text {
+  flex: 1;
+  min-width: 0;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.72em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 4px;
+  opacity: 0.95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-banner .banner-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.theme-banner .icon-btn-round,
+.theme-banner .flip-btn { background: rgba(255,255,255,0.22); color: #fff; }
+.theme-banner .icon-btn-round:hover,
+.theme-banner .flip-btn:hover { background: rgba(255,255,255,0.38); }
+.theme-banner .icon-btn-round:disabled { opacity: 0.4; }
+.theme-banner .icon-btn-round:disabled:hover { background: rgba(255,255,255,0.22); }
 
 .theme-card-topline {
   display: flex;
@@ -454,7 +526,9 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 /* Theme back: the delete button lives here now (bottom-right), not on the front. */
 .theme-back-footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 10px;
 }
 
@@ -464,7 +538,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
    it's longer than the card, via the standard CSS-grid "replicated value" auto-grow trick. */
 .theme-title-pill {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   background: var(--parchment-3);
   border: 1px solid var(--border-soft);
@@ -479,9 +553,10 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .theme-title-pill .flame {
   flex-shrink: 0;
+  align-self: center;
   border: none;
   background: transparent;
-  padding: 1px 2px 0;
+  padding: 2px;
   line-height: 1;
   border-radius: 50%;
   color: var(--ink-soft);
@@ -824,9 +899,8 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .notes-text { width: 100%; min-height: 70px; }
 
 /* ---------- Background (collapsible character story) ---------- */
-
-.background-section { margin-top: -8px; }
-.background-toggle { color: var(--ink-soft); }
+/* Toggle button itself now lives in .sheet-header-row (styled via .icon-btn-round); only the
+   opened text box has its own rule left here. */
 .background-text { width: 100%; min-height: 70px; font-size: 0.88em; margin-top: 6px; }
 
 /* ---------- Empty states ---------- */

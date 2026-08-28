@@ -384,6 +384,19 @@ function collapseIcon() {
   );
 }
 
+// An open book — used for the Background toggle button. Tried a rolled-scroll glyph first, but
+// at icon size it read as an ambiguous blob rather than "story"; an open book reads immediately
+// even small. Two curved-spine pages (the well-known "book-open" glyph shape).
+function bookIcon() {
+  return svgIcon(
+    [
+      ["path", { d: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" }],
+      ["path", { d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" }],
+    ],
+    { size: 15, strokeWidth: 2 }
+  );
+}
+
 // ---------- session state ----------
 
 let backend = "standalone"; // "obr" | "standalone"
@@ -913,19 +926,9 @@ function renderMySheetTab() {
 function renderCharacterSheet(character, save) {
   const wrap = el("div");
 
-  const nameSection = el("div", { class: "section" });
-  nameSection.appendChild(
-    el("input", {
-      class: "character-name-input",
-      type: "text",
-      placeholder: t("characterNamePlaceholder"),
-      value: character.name,
-      oninput: (e) => { character.name = e.target.value; save(); },
-    })
-  );
-  wrap.appendChild(nameSection);
+  wrap.appendChild(renderNameAndBackgroundSection(character, save));
 
-  wrap.appendChild(renderBackgroundSection(character, save));
+  wrap.appendChild(renderActiveTagsSection(character, save));
 
   const themesSection = el("div", { class: "section" });
   themesSection.appendChild(el("div", { class: "section-title" }, [el("span", { text: t("themesTitle") })]));
@@ -949,28 +952,45 @@ function renderCharacterSheet(character, save) {
   wrap.appendChild(themesSection);
 
   wrap.appendChild(renderBackpackSection(character, save));
-  wrap.appendChild(renderActiveTagsSection(character, save));
   wrap.appendChild(renderNotesSection(character, save));
 
   return wrap;
 }
 
-// ---------- Background (collapsible free-form character story) ----------
+// ---------- Name + Background (collapsible free-form character story) ----------
+// The Background toggle sits to the left of the name, as a small scroll-icon button rather than
+// a spelled-out label — and the dashed divider that used to sit directly under the name input
+// now sits at the bottom of this whole block, so an opened Background text box appears above the
+// divider (inside the header), not as its own separate section below it.
 
-function renderBackgroundSection(character, save) {
+function renderNameAndBackgroundSection(character, save) {
   const isOpen = expandedBackgroundIds.has(character.id);
-  const section = el("div", { class: "section background-section" });
-  section.appendChild(
-    el("button", {
-      class: "btn small ghost background-toggle",
-      text: (isOpen ? "▾ " : "▸ ") + t("backgroundTitle"),
-      onclick: () => {
-        if (isOpen) expandedBackgroundIds.delete(character.id);
-        else expandedBackgroundIds.add(character.id);
-        refreshTabContent();
-      },
+  const section = el("div", { class: "section sheet-header" });
+
+  const row = el("div", { class: "sheet-header-row" });
+  row.appendChild(
+    el("input", {
+      class: "character-name-input",
+      type: "text",
+      placeholder: t("characterNamePlaceholder"),
+      value: character.name,
+      oninput: (e) => { character.name = e.target.value; save(); },
     })
   );
+  const bgToggle = el("button", {
+    class: "icon-btn-round background-toggle",
+    title: t("backgroundTitle"),
+    "aria-label": t("backgroundTitle"),
+    onclick: () => {
+      if (isOpen) expandedBackgroundIds.delete(character.id);
+      else expandedBackgroundIds.add(character.id);
+      refreshTabContent();
+    },
+  });
+  bgToggle.appendChild(bookIcon());
+  row.appendChild(bgToggle);
+  section.appendChild(row);
+
   if (isOpen) {
     section.appendChild(
       el("textarea", {
@@ -1111,9 +1131,21 @@ function renderThemeTitlePill(theme, save, rerender) {
 function renderThemeFront(character, save, theme, cardNode) {
   const face = el("div", { class: "theme-face front " + categoryColorClass(theme.categoryId) });
 
-  const topRow = el("div", { class: "theme-card-topline" });
-  topRow.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
-  const actions = el("div", { class: "theme-card-actions" });
+  // Full-width banner: category color says which category this is (the picker itself now lives
+  // on the back, out of the way), and the left side is a free-text field for the Theme's Type —
+  // the thematic-kit descriptor (e.g. "Identity", "Community") — always visible here instead of
+  // hidden behind "Show more" like before.
+  const banner = el("div", { class: "theme-banner " + categoryColorClass(theme.categoryId) });
+  banner.appendChild(
+    el("input", {
+      class: "banner-type-input",
+      type: "text",
+      placeholder: t("themeTypePlaceholder"),
+      value: theme.type,
+      oninput: (e) => { theme.type = e.target.value; save(); },
+    })
+  );
+  const actions = el("div", { class: "banner-actions" });
 
   const addPowerBtn = el("button", {
     class: "icon-btn-round",
@@ -1147,27 +1179,29 @@ function renderThemeFront(character, save, theme, cardNode) {
   const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
   flipBtn.appendChild(flipIcon());
   actions.appendChild(flipBtn);
-  topRow.appendChild(actions);
-  face.appendChild(topRow);
+  banner.appendChild(actions);
+  face.appendChild(banner);
 
-  face.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme)));
+  const body = el("div", { class: "theme-face-body" });
 
-  face.appendChild(
+  body.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme)));
+
+  body.appendChild(
     renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
   );
-  face.appendChild(
+  body.appendChild(
     renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true })
   );
 
-  // Type and Quest are secondary info (checked occasionally, not every beat of play), so in the
-  // compact popover they sit behind a "Show more" toggle — Title (as a Power tag) and the
-  // Power/Weakness tags stay visible with zero clicks, which is what's actually referenced
-  // constantly during a scene. The expanded/full-screen view has room to spare and is opened
-  // specifically to see everything at once, so there the toggle is skipped entirely and Type +
-  // Quest are always shown.
+  // Quest is secondary info (checked occasionally, not every beat of play), so in the compact
+  // popover it sits behind a "Show more" toggle — Title (as a Power tag), the Power/Weakness
+  // tags, and Type (now on the banner) stay visible with zero clicks, which is what's actually
+  // referenced constantly during a scene. The expanded/full-screen view has room to spare and is
+  // opened specifically to see everything at once, so there the toggle is skipped and Quest is
+  // always shown.
   const moreOpen = isModalView || expandedThemeExtraIds.has(theme.id);
   if (!isModalView) {
-    face.appendChild(
+    body.appendChild(
       el("button", {
         class: "theme-more-toggle",
         text: (moreOpen ? "▴ " : "▾ ") + (moreOpen ? t("showLess") : t("showMore")),
@@ -1182,15 +1216,6 @@ function renderThemeFront(character, save, theme, cardNode) {
 
   if (moreOpen) {
     const moreBody = el("div", { class: "theme-more-body" });
-    moreBody.appendChild(
-      el("input", {
-        class: "theme-type-input",
-        type: "text",
-        placeholder: t("themeTypePlaceholder"),
-        value: theme.type,
-        oninput: (e) => { theme.type = e.target.value; save(); },
-      })
-    );
     moreBody.appendChild(el("label", { class: "field-label", text: t("questionLabel") }));
     moreBody.appendChild(
       el("textarea", {
@@ -1199,9 +1224,10 @@ function renderThemeFront(character, save, theme, cardNode) {
         oninput: (e) => { theme.question = e.target.value; save(); },
       }, theme.question)
     );
-    face.appendChild(moreBody);
+    body.appendChild(moreBody);
   }
 
+  face.appendChild(body);
   return face;
 }
 
@@ -1301,22 +1327,27 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
 function renderThemeBack(character, save, theme, cardNode) {
   const face = el("div", { class: "theme-face back " + categoryColorClass(theme.categoryId) });
 
-  const topRow = el("div", { class: "theme-card-topline" }, [
-    el("span", { class: "valore-chip " + categoryColorClass(theme.categoryId), text: t("tracksTitle") }),
-  ]);
+  // Same banner as the front, for visual continuity — just the flip button on it (add-Power/
+  // add-Weakness don't apply on the back). Type is read-only here; it's edited on the front.
+  const banner = el("div", { class: "theme-banner " + categoryColorClass(theme.categoryId) });
+  banner.appendChild(el("span", { class: "banner-type-text", text: theme.type || t("themeTypePlaceholder") }));
+  const bannerActions = el("div", { class: "banner-actions" });
   const flipBtn = el("button", { class: "flip-btn", title: t("flipTitle"), onclick: () => flipCard(theme.id, cardNode) });
   flipBtn.appendChild(flipIcon());
-  topRow.appendChild(flipBtn);
-  face.appendChild(topRow);
+  bannerActions.appendChild(flipBtn);
+  banner.appendChild(bannerActions);
+  face.appendChild(banner);
 
-  face.appendChild(
+  const body = el("div", { class: "theme-face-body" });
+
+  body.appendChild(
     renderTracksBlock(theme, save, () => replaceThemeCard(character, save, theme), {
       colorClass: categoryColorClass(theme.categoryId),
     })
   );
 
-  face.appendChild(el("label", { class: "field-label", text: t("specialLabel") }));
-  face.appendChild(
+  body.appendChild(el("label", { class: "field-label", text: t("specialLabel") }));
+  body.appendChild(
     el("textarea", {
       class: "special-text",
       placeholder: t("specialPlaceholder"),
@@ -1324,7 +1355,10 @@ function renderThemeBack(character, save, theme, cardNode) {
     }, theme.special)
   );
 
+  // Category picker moved here (off the front, out of the way) and the delete button, sharing
+  // the bottom row.
   const footer = el("div", { class: "theme-back-footer" });
+  footer.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
   const deleteBtn = el("button", {
     class: "btn danger small icon-only",
     title: t("removeTheme"),
@@ -1339,8 +1373,9 @@ function renderThemeBack(character, save, theme, cardNode) {
   });
   deleteBtn.appendChild(trashIcon());
   footer.appendChild(deleteBtn);
-  face.appendChild(footer);
+  body.appendChild(footer);
 
+  face.appendChild(body);
   return face;
 }
 
