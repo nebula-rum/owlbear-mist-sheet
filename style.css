@@ -1243,8 +1243,8 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 }
 
 .roll-log-pill {
-  width: 48px;
-  height: 48px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--ink);
@@ -1257,8 +1257,13 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 .roll-log-pill:hover { background: #2a2013; }
 
 .roll-log-panel {
-  width: 100%;
-  max-width: 280px;
+  /* A fixed width, not width:100%+max-width — #app/.roll-log-widget are shrink-to-fit flex/block
+     boxes with no definite width of their own (see body.roll-log-view's flex layout above), so a
+     percentage width here was silently resolving to "auto" (content-sized) and the old max-width
+     cap was never actually being reached either way. An explicit px width is the only thing that
+     reliably renders at this size regardless of that chain. 322px = 280px + 15%, at the user's
+     request for a wider roll-log panel. */
+  width: 322px;
   max-height: 340px;
   display: flex;
   flex-direction: column;

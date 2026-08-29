@@ -2,6 +2,7 @@ import OBR from "./obr-sdk.bundle.js";
 
 const LANG_KEY = "mist-hero-sheet-lang";
 const FONT_SCALE_KEY = "mist-hero-sheet-font-scale";
+const ROLL_SOUND_MUTE_KEY = "mist-hero-sheet-roll-sound-muted";
 const COLOR_KEYS = ["amber", "teal", "violet", "rose", "sage"];
 
 // Room metadata keys — everything lives in shared OBR room metadata now (not per-player
@@ -29,8 +30,15 @@ const isModalView = new URLSearchParams(window.location.search).get("view") === 
 // and rollDice() below). Query param recognized the same way as ?view=expanded above.
 const ROLL_LOG_POPOVER_ID = "com.mistengine.hero-sheet/roll-log-popover";
 const ROLL_LOG_MAX_ENTRIES = 50;
-const ROLL_LOG_COLLAPSED_SIZE = { width: 56, height: 56 };
-const ROLL_LOG_EXPANDED_SIZE = { width: 300, height: 380 };
+// Collapsed pill sized to match Owlbear's own round toolbar/HUD buttons (32px, via .roll-log-pill
+// in style.css), not the sheet's own larger icon buttons — this is the one button that floats
+// directly over the game table. The popover box itself is a few px larger than the visible pill
+// (same 4px-per-side margin as the original 56/48 pair) so the pill's drop shadow has room to
+// render instead of being clipped at the popover's exact edge.
+const ROLL_LOG_COLLAPSED_SIZE = { width: 40, height: 40 };
+// Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
+// 15% wider than the original 280/300 pair at the user's request.
+const ROLL_LOG_EXPANDED_SIZE = { width: 342, height: 380 };
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 if (isRollLogView) {
   // This page is just the floating dice pill/panel, not the parchment character sheet — strip
@@ -173,6 +181,8 @@ const LABELS = {
     rollOutcomeSuccess: "Success (10+)",
     rollOutcomeMixed: "Mixed success (7-9)",
     rollOutcomeFailure: "Failure (6-)",
+    muteRollSoundTitle: "Mute dice sound (just for you)",
+    unmuteRollSoundTitle: "Unmute dice sound (just for you)",
   },
   it: {
     standaloneBanner: "Modalità anteprima locale (non collegata a Owlbear Rodeo) — i dati sono salvati solo in questo browser.",
@@ -305,6 +315,8 @@ const LABELS = {
     rollOutcomeSuccess: "Successo pieno (10+)",
     rollOutcomeMixed: "Successo parziale (7-9)",
     rollOutcomeFailure: "Fallimento (6-)",
+    muteRollSoundTitle: "Disattiva il suono dei tiri (solo per te)",
+    unmuteRollSoundTitle: "Riattiva il suono dei tiri (solo per te)",
   },
 };
 
@@ -340,6 +352,71 @@ function adjustFontScale(delta) {
 }
 
 applyFontScale();
+
+// ---------- dice roll sound ----------
+// The sound itself always plays for every connected client whenever anyone rolls (see rollDice()
+// and the OBR.room.onMetadataChange listener in boot()) — that's the point, the whole table
+// should hear it, not just the roller. This section is only the personal on/off switch: a
+// per-browser preference, "everyone picks their own" like fontScaleIndex above, so a player who
+// finds it annoying can silence it for themselves without asking the GM to turn it off for
+// everyone.
+let rollSoundMuted = localStorage.getItem(ROLL_SOUND_MUTE_KEY) === "1";
+
+function setRollSoundMuted(muted) {
+  rollSoundMuted = muted;
+  localStorage.setItem(ROLL_SOUND_MUTE_KEY, muted ? "1" : "0");
+}
+
+let diceAudioCtx = null;
+function getDiceAudioCtx() {
+  if (diceAudioCtx) return diceAudioCtx;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  diceAudioCtx = Ctx ? new Ctx() : null;
+  return diceAudioCtx;
+}
+
+// Synthesizes a short dice-clatter sound (a handful of filtered noise bursts with decaying
+// pitch/volume, like a few dice hitting a table) with the Web Audio API instead of shipping an
+// audio file — keeps the extension a plain dependency-free static site and sidesteps any
+// licensing question over a found sound effect.
+function playDiceRollSound() {
+  if (rollSoundMuted) return;
+  try {
+    const ctx = getDiceAudioCtx();
+    if (!ctx) return;
+    // Browsers suspend a freshly-created AudioContext until the page/frame has seen a user
+    // gesture. resume() is a no-op once that's already happened, and this call is harmless (just
+    // silently ineffective) if it hasn't — the very next gesture on this popover (e.g. clicking
+    // the pill to expand it) unblocks it for every roll after that.
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    const clackTimes = [0, 0.07, 0.13, 0.2, 0.29];
+    clackTimes.forEach((offset, i) => {
+      const dur = 0.055;
+      const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let n = 0; n < bufferSize; n++) {
+        data[n] = (Math.random() * 2 - 1) * Math.pow(1 - n / bufferSize, 2);
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 1400 - i * 160;
+      filter.Q.value = 1.1;
+      const gain = ctx.createGain();
+      const startAt = now + offset;
+      gain.gain.setValueAtTime(0.32 - i * 0.02, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt + dur);
+      noise.connect(filter).connect(gain).connect(ctx.destination);
+      noise.start(startAt);
+      noise.stop(startAt + dur + 0.01);
+    });
+  } catch (err) {
+    // Fails silently — worst case a roll is quiet instead of breaking the roll itself.
+  }
+}
 
 // ---------- expanded view (Owlbear Modal / popup window) ----------
 
@@ -490,7 +567,7 @@ function tickToggle(checked, title, onclick) {
 
 // A six-sided die face (rounded square + 5 pips) — the roll button, and the roll-log panel's
 // collapsed pill icon.
-function diceIcon() {
+function diceIcon(size) {
   return svgIcon(
     [
       ["rect", { x: "3", y: "3", width: "18", height: "18", rx: "4" }],
@@ -500,7 +577,31 @@ function diceIcon() {
       ["circle", { cx: "8", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
       ["circle", { cx: "16", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
     ],
-    { size: 15, strokeWidth: 2 }
+    { size: size || 15, strokeWidth: 2 }
+  );
+}
+
+// Speaker glyphs — the roll-log panel's personal mute toggle (see rollSoundMuted). Solid speaker
+// body plus either two sound-wave arcs (on) or an X (muted).
+function soundOnIcon() {
+  return svgIcon(
+    [
+      ["path", { d: "M4 9v6h4l5 5V4L8 9H4z", fill: "currentColor", stroke: "none" }],
+      ["path", { d: "M16 8.5a5 5 0 0 1 0 7" }],
+      ["path", { d: "M18.5 6a8.5 8.5 0 0 1 0 12" }],
+    ],
+    { size: 14, strokeWidth: 2 }
+  );
+}
+
+function soundOffIcon() {
+  return svgIcon(
+    [
+      ["path", { d: "M4 9v6h4l5 5V4L8 9H4z", fill: "currentColor", stroke: "none" }],
+      ["line", { x1: "16", y1: "9", x2: "22", y2: "15" }],
+      ["line", { x1: "22", y1: "9", x2: "16", y2: "15" }],
+    ],
+    { size: 14, strokeWidth: 2 }
   );
 }
 
@@ -570,6 +671,32 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// Structural equality for plain JSON-shaped data (objects/arrays/primitives), independent of
+// object key insertion order. Used instead of comparing JSON.stringify() output when deciding
+// whether an incoming room-metadata snapshot actually differs from what we already have — two
+// semantically identical objects can still stringify to different text if their keys were built
+// up in a different order (e.g. a freshly round-tripped object from OBR vs. one this client just
+// rebuilt locally), and a false "changed" there was silently forcing a full re-render — see the
+// onMetadataChange handler in boot() for why that mattered enough to fix.
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!deepEqual(a[key], b[key])) return false;
+  }
+  return true;
+}
+
 // ---------- in-app confirm dialog ----------
 // Deliberately NOT the browser's native confirm(): Chrome (and others) let a user permanently
 // silence a page's dialogs via a "Don't allow this page to create additional dialogs"
@@ -635,6 +762,30 @@ function showConfirmDialog(message, onConfirm) {
 
 let roomMeta = {};
 const roomSaveTimers = new Map();
+
+// A remote metadata change (see boot()'s OBR.room.onMetadataChange) triggers a full renderApp(),
+// which rebuilds every DOM node — including whatever text input the player currently has focus
+// in. That's what made a Settings text field (or any other synced text field) feel like it
+// "deactivated" after a single keystroke: the debounced save for that keystroke round-trips back
+// as a metadata-change event a couple hundred ms later, and the resulting re-render yanks focus
+// out from under the very field the player is still typing in. Rather than rendering immediately
+// on every metadata change, defer it while a text input/textarea is focused, and catch up the
+// instant that field loses focus — the player's own edit is already reflected locally (roomMeta
+// is updated either way), so nothing is lost by waiting to redraw.
+let pendingRenderAfterEdit = false;
+
+function isEditableFocused() {
+  const ae = document.activeElement;
+  return !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA");
+}
+
+document.addEventListener("focusout", () => {
+  if (!pendingRenderAfterEdit) return;
+  pendingRenderAfterEdit = false;
+  // The field that just blurred already has whatever the player typed; a fresh render here only
+  // ever adds information (a remote change that arrived while they were busy), never removes it.
+  renderApp();
+});
 
 async function loadRoomMeta() {
   if (backend === "obr") {
@@ -943,6 +1094,13 @@ function getRollLog() {
   return Array.isArray(raw) ? raw : [];
 }
 
+// Tracks the last roll-log entry this client has already played a sound for, so the
+// OBR.room.onMetadataChange listener (boot(), below) can tell "a genuinely new roll just landed"
+// apart from "this is just the echo of my own save" or "this is the very first sync on page
+// load" — see rollDice() and boot() for where these get set.
+let lastAnnouncedRollId = null;
+let rollLogSoundReady = false;
+
 // Straight from the same 2d6+Potere resolution this whole tally exists to feed: 10+ full success,
 // 7-9 mixed success, 6- failure. Recomputed from the stored total at render time rather than
 // stored on the entry itself — it's a pure function of one number, no need to persist it twice.
@@ -999,6 +1157,13 @@ function rollDice(character) {
   scheduleRoomSave(ROOM_KEYS.rollLog);
   // Deliberately does NOT touch rollSelection/rollModifiers — rolling and the manual Reset button
   // stay independent actions (see resetTotalPower's own comment on why Reset is manual).
+
+  // Play immediately for the roller (this click is a real user gesture, so autoplay is never
+  // blocked here) rather than waiting on the room-metadata round trip. Mark this id as already
+  // announced first, so when that round trip's onMetadataChange echo does arrive (see boot()),
+  // this same client doesn't play the sound a second time for its own roll.
+  lastAnnouncedRollId = entry.id;
+  playDiceRollSound();
 
   // In standalone/local-preview mode there's no background popover — the corner widget is instead
   // embedded directly in this same page (see renderApp()) — so refresh it immediately rather than
@@ -2503,7 +2668,7 @@ function renderRollLogPanel() {
       "aria-label": t("expandRollLogTitle"),
       onclick: () => toggleRollLogExpanded(),
     });
-    pill.appendChild(diceIcon());
+    pill.appendChild(diceIcon(15));
     widget.appendChild(pill);
     return widget;
   }
@@ -2513,6 +2678,20 @@ function renderRollLogPanel() {
   const header = el("div", { class: "roll-log-header" });
   header.appendChild(el("span", { class: "roll-log-title", text: t("rollLogTitle") }));
   const headerBtns = el("div", { class: "roll-log-header-btns" });
+  // Personal mute toggle — affects only this viewer's own copy of the panel (see
+  // rollSoundMuted), so it's available to everyone, not just the GM.
+  const muteBtn = el("button", {
+    class: "icon-btn-round roll-log-mute-btn",
+    title: rollSoundMuted ? t("unmuteRollSoundTitle") : t("muteRollSoundTitle"),
+    "aria-label": rollSoundMuted ? t("unmuteRollSoundTitle") : t("muteRollSoundTitle"),
+    onclick: () => {
+      setRollSoundMuted(!rollSoundMuted);
+      if (isRollLogView) renderApp();
+      else refreshRollLogWidget();
+    },
+  });
+  muteBtn.appendChild(rollSoundMuted ? soundOffIcon() : soundOnIcon());
+  headerBtns.appendChild(muteBtn);
   // Clearing wipes the log for the whole table, not just the viewer's own copy — GM only, same
   // UI-level gating (not an OBR-enforced permission) as every other GM-only control in this app.
   if (isGM()) {
@@ -2635,10 +2814,30 @@ async function boot() {
       // when `changed` is true: the mutation lands on an object roomMeta no longer references,
       // save() persists the untouched replacement, and the action silently does nothing. Only
       // replace roomMeta (and thus object identities) when the content actually differs.
-      const changed = JSON.stringify(meta) !== JSON.stringify(roomMeta);
+      // deepEqual (not JSON.stringify) on purpose — a round-tripped object's keys aren't
+      // guaranteed to come back in the same order this client built them in, which made
+      // JSON.stringify comparisons spuriously report "changed" on ordinary self-echoes.
+      const changed = !deepEqual(meta, roomMeta);
       if (!changed) return;
       roomMeta = meta;
-      renderApp();
+      if (isEditableFocused()) {
+        // Don't tear down the field the player is actively typing in — see pendingRenderAfterEdit
+        // above. roomMeta is already up to date; the visual refresh just waits until they blur.
+        pendingRenderAfterEdit = true;
+      } else {
+        renderApp();
+      }
+      // Someone (possibly this same client, echoing its own save) just changed room metadata —
+      // if the roll log's last entry is one we haven't announced yet, a roll genuinely happened
+      // since we last checked, so play the sound. rollLogSoundReady guards against firing on the
+      // very first sync after page load, before lastAnnouncedRollId has been seeded below.
+      if (rollLogSoundReady) {
+        const lastRoll = getRollLog().slice(-1)[0];
+        if (lastRoll && lastRoll.id !== lastAnnouncedRollId) {
+          lastAnnouncedRollId = lastRoll.id;
+          playDiceRollSound();
+        }
+      }
     });
   } else {
     backend = "standalone";
@@ -2648,6 +2847,11 @@ async function boot() {
   }
 
   await loadRoomMeta();
+  // Seed "already announced" with whatever roll is already at the tail of the log (if any) so
+  // existing history doesn't play back on load — only rolls that land after this point should
+  // make a sound.
+  lastAnnouncedRollId = (getRollLog().slice(-1)[0] || {}).id || null;
+  rollLogSoundReady = true;
   renderApp();
 }
 

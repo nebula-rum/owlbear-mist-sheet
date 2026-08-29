@@ -26,8 +26,19 @@ import OBR from "./obr-sdk.bundle.js";
 // (rather than imported) because this page never loads the rest of app.js, which assumes an
 // #app element and a full character-sheet DOM that this tiny background page doesn't have.
 const ROLL_LOG_POPOVER_ID = "com.mistengine.hero-sheet/roll-log-popover";
-const COLLAPSED_WIDTH = 56;
-const COLLAPSED_HEIGHT = 56;
+// Must match ROLL_LOG_COLLAPSED_SIZE in app.js (40x40, shrunk from the original 56x56 — see the
+// "less big, match Owlbear's own round buttons" pass).
+const COLLAPSED_WIDTH = 40;
+const COLLAPSED_HEIGHT = 40;
+// Owlbear's own bottom-right corner already has a native control (the scene/map toggle) sitting
+// right at the edge — flush with marginThreshold:0, our pill was landing right on top of it. This
+// option is verbatim from Material-UI's Popover component (Owlbear's popover options match MUI's
+// prop names exactly), and — unlike anchorOrigin/transformOrigin, which just pick a corner — it
+// keeps the popover at least this many px from EVERY viewport edge, nudging it up and slightly
+// left instead of dead flush. It's a guess at what clears that native button without having a
+// live room to measure against; nudge this number up or down once you've seen it in an actual
+// Owlbear session.
+const BOTTOM_RIGHT_MARGIN = 56;
 
 OBR.onReady(() => {
   // Build an already-absolute URL ourselves: Owlbear's SDK resolves a relative "url" by
@@ -45,7 +56,7 @@ OBR.onReady(() => {
     transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     disableClickAway: true,
     hidePaper: true,
-    marginThreshold: 0,
+    marginThreshold: BOTTOM_RIGHT_MARGIN,
   });
 });
 </script>
