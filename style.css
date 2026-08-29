@@ -1229,13 +1229,16 @@ body.roll-log-view {
   display: flex;
   justify-content: flex-end;
   align-items: flex-end;
-  /* Vertical-only breathing room above Owlbear's own native scene/map-toggle button, which sits
-     right at the true bottom-right corner. Must match ROLL_LOG_BOTTOM_CLEARANCE in app.js — the
-     popover box is made exactly that much taller than the visible widget so this padding has
-     somewhere to go without pushing the widget off the box entirely. No padding-right: the widget
-     stays flush against the right edge (a uniform OBR marginThreshold, tried first, pushed the
-     right edge in too, which read as "a little off"). */
+  /* Breathing room above (and a little in from) Owlbear's own native scene/map-toggle button,
+     which sits right at the true bottom-right corner. Must match ROLL_LOG_BOTTOM_CLEARANCE /
+     ROLL_LOG_RIGHT_CLEARANCE in app.js — the popover box is made exactly that much bigger than
+     the visible widget so this padding has somewhere to go without pushing the widget off the box
+     entirely. Flush-right (0 padding, tried first) read as "way too far right"; a uniform
+     marginThreshold via the popover API (tried before that) pushed both edges in by the same
+     amount and read as "a little off" — so the right gap is deliberately half the bottom one,
+     tuned independently on each axis instead of moving together. */
   padding-bottom: 56px;
+  padding-right: 28px;
 }
 body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 

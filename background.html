@@ -27,12 +27,12 @@ import OBR from "./obr-sdk.bundle.js";
 // #app element and a full character-sheet DOM that this tiny background page doesn't have.
 const ROLL_LOG_POPOVER_ID = "com.mistengine.hero-sheet/roll-log-popover";
 // Must match ROLL_LOG_COLLAPSED_SIZE in app.js: 40x40 visible pill (see the "less big, match
-// Owlbear's own round buttons" pass) plus ROLL_LOG_BOTTOM_CLEARANCE (56px) of extra box height —
-// see the comment on that constant in app.js for why the clearance lives in the box height and
-// body.roll-log-view's own CSS padding, rather than here as a popover-level margin: a uniform
-// OBR.popover.open() marginThreshold (tried first) pushes the RIGHT edge in by the same amount
-// too, which read as "a little off" from flush-right.
-const COLLAPSED_WIDTH = 40;
+// Owlbear's own round buttons" pass) plus ROLL_LOG_RIGHT_CLEARANCE (28px) / ROLL_LOG_BOTTOM_
+// CLEARANCE (56px) of extra box width/height — see the comment on those constants in app.js for
+// why the clearance lives in the box size and body.roll-log-view's own CSS padding, rather than
+// here as a popover-level margin (a uniform OBR.popover.open() marginThreshold, tried first,
+// moves both edges together and can't be tuned per axis).
+const COLLAPSED_WIDTH = 40 + 28;
 const COLLAPSED_HEIGHT = 40 + 56;
 
 OBR.onReady(() => {

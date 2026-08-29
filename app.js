@@ -37,17 +37,25 @@ const ROLL_LOG_MAX_ENTRIES = 50;
 // render instead of being clipped at the popover's exact edge.
 //
 // Owlbear's own bottom-right corner already has a native control (the scene/map toggle) sitting
-// right at the edge, so the widget needs to clear it vertically — but should still sit flush
-// against the RIGHT edge (a uniform OBR.popover.open() marginThreshold pushes every edge in by
-// the same amount, which is what made it look "a little off" from the right when tried). Instead,
-// only the box HEIGHT gets this extra room; body.roll-log-view's own bottom padding in style.css
-// (must match this number) is what actually pins the visible widget above the true bottom edge,
-// while width — and thus the right edge — stays untouched.
+// right at the edge, so the widget needs to clear it vertically. A uniform OBR.popover.open()
+// marginThreshold (tried first) pushed every edge in by the same 56px, which read as "a little
+// off" from the right; going fully flush-right instead (tried next) read as "way too far right" —
+// so the right-side gap is now deliberately half of the vertical one, not zero. Both gaps are
+// created inside the widget's own page (see body.roll-log-view's padding in style.css, which must
+// match these numbers) rather than via the popover API's own margin option, so each axis can be
+// tuned independently instead of moving together.
 const ROLL_LOG_BOTTOM_CLEARANCE = 56;
-const ROLL_LOG_COLLAPSED_SIZE = { width: 40, height: 40 + ROLL_LOG_BOTTOM_CLEARANCE };
+const ROLL_LOG_RIGHT_CLEARANCE = 28;
+const ROLL_LOG_COLLAPSED_SIZE = {
+  width: 40 + ROLL_LOG_RIGHT_CLEARANCE,
+  height: 40 + ROLL_LOG_BOTTOM_CLEARANCE,
+};
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
-const ROLL_LOG_EXPANDED_SIZE = { width: 342, height: 380 + ROLL_LOG_BOTTOM_CLEARANCE };
+const ROLL_LOG_EXPANDED_SIZE = {
+  width: 342 + ROLL_LOG_RIGHT_CLEARANCE,
+  height: 380 + ROLL_LOG_BOTTOM_CLEARANCE,
+};
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 if (isRollLogView) {
   // This page is just the floating dice pill/panel, not the parchment character sheet — strip
