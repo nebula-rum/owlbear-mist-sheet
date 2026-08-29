@@ -845,22 +845,17 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .track-title-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 4px;
+  align-items: center;
 }
 .track-name { font-family: "Cinzel", Georgia, serif; font-size: 0.82em; flex-shrink: 0; color: var(--ink-soft); }
 .track-effect { font-size: 0.72em; color: var(--ink-soft); font-style: italic; margin-bottom: 5px; }
 
-.track-name-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  border-bottom: 1px dashed var(--border-soft);
+.track-order-label {
   font-family: "Cinzel", Georgia, serif;
   font-size: 0.82em;
-  padding: 1px 2px;
-  margin-right: 6px;
+  color: var(--ink-soft);
+  flex-shrink: 0;
+  width: 1.3em;
 }
 
 .dots {

@@ -88,6 +88,9 @@ const LABELS = {
     trackLabelImprove: "Improve",
     trackLabelAdvance: "Advance",
     defaultTrackLabel: "Track",
+    trackLabelsSettingsTitle: "Track Names",
+    trackLabelsSettingsHint: "Define the names for the 3 progress tracks on the back of every Theme card (e.g. Abandon / Improve / Advance) — the same 3 names apply to every character's Themes and the Company Theme. Only you (the GM) can edit these.",
+    trackLabelPlaceholder: "Track name",
     specialLabel: "Special Upgrades",
     specialPlaceholder: "Upgrades unlocked for this Theme…",
     backpackTitle: "Backpack",
@@ -217,6 +220,9 @@ const LABELS = {
     trackLabelImprove: "Miglioria",
     trackLabelAdvance: "Avanzamento",
     defaultTrackLabel: "Traccia",
+    trackLabelsSettingsTitle: "Nomi delle Tracce",
+    trackLabelsSettingsHint: "Definisci i nomi delle 3 tracce di progresso sul retro di ogni carta Tema (es. Abbandono / Miglioria / Avanzamento) — gli stessi 3 nomi si applicano ai Temi di ogni personaggio e al Tema di Compagnia. Questa scheda è modificabile solo da te (il Narratore).",
+    trackLabelPlaceholder: "Nome traccia",
     specialLabel: "Miglioramenti Speciali",
     specialPlaceholder: "Miglioramenti sbloccati per questo Tema…",
     backpackTitle: "Zaino",
@@ -681,11 +687,17 @@ function defaultCampaign() {
     // palette, but the GM can repick either from the same 5-color set used for categories.
     tagColor: "amber",
     statusColor: "sage",
+    // The 3 track names on the back of every Theme card (and the Company Theme) — GM-defined,
+    // campaign-wide, same as themeCategories above. Position matters (index 0/1/2), not the id,
+    // since every Theme's own `tracks` array is always exactly 3 long in the same fixed order.
+    trackLabels: [t("trackLabelAbandon"), t("trackLabelImprove"), t("trackLabelAdvance")],
   };
 }
 
 function normalizeCampaign(raw) {
   const cats = raw && Array.isArray(raw.themeCategories) ? raw.themeCategories : null;
+  const defaults = defaultCampaign();
+  const rawTrackLabels = raw && Array.isArray(raw.trackLabels) ? raw.trackLabels : null;
   return {
     themeCategories: cats
       ? cats.map((cat) => ({
@@ -693,9 +705,12 @@ function normalizeCampaign(raw) {
           label: cat && typeof cat.label === "string" ? cat.label : "",
           color: cat && COLOR_KEYS.includes(cat.color) ? cat.color : "amber",
         }))
-      : defaultCampaign().themeCategories,
+      : defaults.themeCategories,
     tagColor: raw && COLOR_KEYS.includes(raw.tagColor) ? raw.tagColor : "amber",
     statusColor: raw && COLOR_KEYS.includes(raw.statusColor) ? raw.statusColor : "sage",
+    trackLabels: [0, 1, 2].map((i) =>
+      rawTrackLabels && typeof rawTrackLabels[i] === "string" ? rawTrackLabels[i] : defaults.trackLabels[i]
+    ),
   };
 }
 
@@ -1810,30 +1825,20 @@ function renderThemeBack(character, save, theme, cardNode) {
 
 // Generic track-list renderer, used for personal Themes and the Company Theme. `owner`
 // needs an array at owner.tracks, always exactly 3 (like the core book) — there's no add or
-// remove UI. `readOnly` locks rename/dot-clicks (used for the Company Theme when viewed by a
-// non-GM player).
+// remove UI. `readOnly` locks dot-clicks (used for the Company Theme when viewed by a non-GM
+// player). Track names are no longer per-instance data: they're the GM's campaign-wide
+// trackLabels (Settings tab), matched by position (index 0/1/2) since every Theme's `tracks`
+// array is always in the same fixed order — so nobody editing a sheet can rename them here.
 function renderTracksBlock(owner, save, rerender, opts = {}) {
   const readOnly = !!opts.readOnly;
   const colorClass = opts.colorClass || "no-category";
+  const trackLabels = getCampaign().trackLabels;
   const wrap = el("div");
 
-  owner.tracks.forEach((track) => {
+  owner.tracks.forEach((track, idx) => {
     const block = el("div", { class: "track-block" });
     const titleRow = el("div", { class: "track-title-row" });
-    if (readOnly) {
-      titleRow.appendChild(el("span", { class: "track-name", text: track.label }));
-    } else {
-      titleRow.appendChild(
-        el("input", {
-          class: "track-name-input",
-          type: "text",
-          value: track.label,
-          oninput: (e) => { track.label = e.target.value; save(); },
-        })
-      );
-    }
-    titleRow.appendChild(el("span", { class: "track-name", text: track.value + " / " + track.max }));
-    block.appendChild(titleRow);
+    titleRow.appendChild(el("span", { class: "track-name", text: trackLabels[idx] || track.label }));
 
     const dots = el("div", { class: "dots" });
     for (let i = 0; i < track.max; i++) {
@@ -1853,7 +1858,8 @@ function renderTracksBlock(owner, save, rerender, opts = {}) {
         })
       );
     }
-    block.appendChild(dots);
+    titleRow.appendChild(dots);
+    block.appendChild(titleRow);
     wrap.appendChild(block);
   });
 
@@ -2409,6 +2415,27 @@ function renderSettingsTab() {
     rows.appendChild(row);
   });
   wrap.appendChild(rows);
+
+  wrap.appendChild(el("label", { class: "field-label", text: t("trackLabelsSettingsTitle") }));
+  wrap.appendChild(el("div", { class: "hint" }, t("trackLabelsSettingsHint")));
+  const trackRows = el("div", { class: "category-rows" });
+  getCampaign().trackLabels.forEach((label, i) => {
+    const row = el("div", { class: "category-row" });
+    row.appendChild(el("span", { class: "track-order-label", text: String(i + 1) + "." }));
+    row.appendChild(
+      el("input", {
+        type: "text",
+        class: "category-label-input",
+        placeholder: t("trackLabelPlaceholder"),
+        value: label,
+        oninput: (e) => {
+          updateCampaign((camp) => { camp.trackLabels[i] = e.target.value; });
+        },
+      })
+    );
+    trackRows.appendChild(row);
+  });
+  wrap.appendChild(trackRows);
 
   const campaign = getCampaign();
   wrap.appendChild(el("label", { class: "field-label", text: t("tagColorLabel") }));
