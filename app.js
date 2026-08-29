@@ -35,10 +35,19 @@ const ROLL_LOG_MAX_ENTRIES = 50;
 // directly over the game table. The popover box itself is a few px larger than the visible pill
 // (same 4px-per-side margin as the original 56/48 pair) so the pill's drop shadow has room to
 // render instead of being clipped at the popover's exact edge.
-const ROLL_LOG_COLLAPSED_SIZE = { width: 40, height: 40 };
+//
+// Owlbear's own bottom-right corner already has a native control (the scene/map toggle) sitting
+// right at the edge, so the widget needs to clear it vertically — but should still sit flush
+// against the RIGHT edge (a uniform OBR.popover.open() marginThreshold pushes every edge in by
+// the same amount, which is what made it look "a little off" from the right when tried). Instead,
+// only the box HEIGHT gets this extra room; body.roll-log-view's own bottom padding in style.css
+// (must match this number) is what actually pins the visible widget above the true bottom edge,
+// while width — and thus the right edge — stays untouched.
+const ROLL_LOG_BOTTOM_CLEARANCE = 56;
+const ROLL_LOG_COLLAPSED_SIZE = { width: 40, height: 40 + ROLL_LOG_BOTTOM_CLEARANCE };
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
-const ROLL_LOG_EXPANDED_SIZE = { width: 342, height: 380 };
+const ROLL_LOG_EXPANDED_SIZE = { width: 342, height: 380 + ROLL_LOG_BOTTOM_CLEARANCE };
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 if (isRollLogView) {
   // This page is just the floating dice pill/panel, not the parchment character sheet — strip
@@ -366,6 +375,23 @@ function setRollSoundMuted(muted) {
   rollSoundMuted = muted;
   localStorage.setItem(ROLL_SOUND_MUTE_KEY, muted ? "1" : "0");
 }
+
+// The mute button only exists on the roll-log corner popover's own page (?view=rolllog) — but
+// the roll BUTTON a player actually clicks lives on a completely different page (the main sheet,
+// opened separately from the toolbar). Those are two independent script instances, each with its
+// own module-level rollSoundMuted read once at load time — muting on one page was silently never
+// reaching the other, so a player's own rolls kept playing sound even after they'd hit mute. A
+// "storage" event fires in every OTHER same-origin page when one of them writes to localStorage
+// (never in the page that made the write, which already updated its own variable above), so this
+// is what actually keeps every open copy of this extension in sync live.
+window.addEventListener("storage", (e) => {
+  if (e.key !== ROLL_SOUND_MUTE_KEY) return;
+  rollSoundMuted = e.newValue === "1";
+  // Only the corner widget's own header displays this state — refresh it if this particular page
+  // happens to be showing one (the dedicated roll-log view, or standalone's embedded overlay).
+  if (isRollLogView) renderApp();
+  else if (backend === "standalone") refreshRollLogWidget();
+});
 
 let diceAudioCtx = null;
 function getDiceAudioCtx() {
