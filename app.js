@@ -2486,14 +2486,18 @@ function renderRollLogPanel() {
   const header = el("div", { class: "roll-log-header" });
   header.appendChild(el("span", { class: "roll-log-title", text: t("rollLogTitle") }));
   const headerBtns = el("div", { class: "roll-log-header-btns" });
-  const clearBtn = el("button", {
-    class: "icon-btn-round roll-log-clear-btn",
-    title: t("clearRollLogTitle"),
-    "aria-label": t("clearRollLogTitle"),
-    onclick: () => showConfirmDialog(t("clearRollLogConfirm"), () => clearRollLog()),
-  });
-  clearBtn.appendChild(trashIcon());
-  headerBtns.appendChild(clearBtn);
+  // Clearing wipes the log for the whole table, not just the viewer's own copy — GM only, same
+  // UI-level gating (not an OBR-enforced permission) as every other GM-only control in this app.
+  if (isGM()) {
+    const clearBtn = el("button", {
+      class: "icon-btn-round roll-log-clear-btn",
+      title: t("clearRollLogTitle"),
+      "aria-label": t("clearRollLogTitle"),
+      onclick: () => showConfirmDialog(t("clearRollLogConfirm"), () => clearRollLog()),
+    });
+    clearBtn.appendChild(trashIcon());
+    headerBtns.appendChild(clearBtn);
+  }
   const collapseBtn = el("button", {
     class: "icon-btn-round",
     title: t("collapseRollLogTitle"),

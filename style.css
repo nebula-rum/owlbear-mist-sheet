@@ -1212,13 +1212,34 @@ footer.credits {
    background.html — or embedded directly as a fixed overlay in standalone/local-preview mode),
    shows nothing but this widget: no parchment page background, no padding, so only the dice pill
    or the small panel itself floats over the game table / the sheet underneath. */
+/* The dedicated ?view=rolllog page (loaded inside the real-OBR background popover — see
+   background.html) has nothing else on it, and Owlbear sizes that popover's window itself via
+   OBR.popover.setWidth/setHeight (ROLL_LOG_COLLAPSED_SIZE/ROLL_LOG_EXPANDED_SIZE in app.js) — a
+   fixed box that doesn't shrink to match our actual content height. Left to plain top-to-bottom
+   document flow, a short empty-state panel just sat at the TOP of that box, with the box's own
+   bottom-right corner (which is what Owlbear actually anchors to the screen corner) left empty
+   and transparent below it — so the visible content appeared to float above where it should be,
+   then grow downward as rolls were added, exactly backwards from the intended "pinned at the
+   bottom, grows upward" feel. Fixing this needs the content pinned to the bottom-right of
+   whatever box height Owlbear actually gives the page, regardless of the content's own height —
+   a bottom/right-aligned flexbox on the full-height body does that without needing to know or
+   guess the popover's exact size up front. */
 html.roll-log-view,
 body.roll-log-view {
   background: transparent !important;
+  height: 100%;
   min-height: 0;
+}
+body.roll-log-view {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
 }
 body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 
+/* Standalone/local-preview mode has no such popover — the widget shares the page with the whole
+   character sheet instead, so it needs its own fixed-position corner anchor (with a little
+   breathing room) rather than the roll-log-view page's edge-to-edge flex alignment above. */
 .roll-log-widget.floating {
   position: fixed;
   right: 14px;
