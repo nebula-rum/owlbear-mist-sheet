@@ -165,10 +165,11 @@ const LABELS = {
     rollLogEmpty: "No rolls yet.",
     clearRollLogTitle: "Clear roll history",
     clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
-    rollLogEntryFormat: (name, d1, d2, power, total) =>
-      `${name} — 2d6 (${d1}+${d2}) + Power ${power} = ${total}`,
     collapseRollLogTitle: "Collapse",
     expandRollLogTitle: "Show roll log",
+    rollOutcomeSuccess: "Success (10+)",
+    rollOutcomeMixed: "Mixed success (7-9)",
+    rollOutcomeFailure: "Failure (6-)",
   },
   it: {
     standaloneBanner: "Modalità anteprima locale (non collegata a Owlbear Rodeo) — i dati sono salvati solo in questo browser.",
@@ -293,10 +294,11 @@ const LABELS = {
     rollLogEmpty: "Nessun tiro ancora.",
     clearRollLogTitle: "Cancella la cronologia dei tiri",
     clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
-    rollLogEntryFormat: (name, d1, d2, power, total) =>
-      `${name} — 2d6 (${d1}+${d2}) + Potere ${power} = ${total}`,
     collapseRollLogTitle: "Comprimi",
     expandRollLogTitle: "Mostra il registro dei tiri",
+    rollOutcomeSuccess: "Successo pieno (10+)",
+    rollOutcomeMixed: "Successo parziale (7-9)",
+    rollOutcomeFailure: "Fallimento (6-)",
   },
 };
 
@@ -924,6 +926,43 @@ function resetTotalPower(character) {
 function getRollLog() {
   const raw = roomMeta[ROOM_KEYS.rollLog];
   return Array.isArray(raw) ? raw : [];
+}
+
+// Straight from the same 2d6+Potere resolution this whole tally exists to feed: 10+ full success,
+// 7-9 mixed success, 6- failure. Recomputed from the stored total at render time rather than
+// stored on the entry itself — it's a pure function of one number, no need to persist it twice.
+function rollOutcome(total) {
+  if (total >= 10) return "success";
+  if (total >= 7) return "mixed";
+  return "failure";
+}
+
+// Assigns each character a stable color for their name in the roll log, hashed from the
+// character's id (not its current name) so renaming a character doesn't shuffle its color, and
+// reloading the page reproduces the same color instead of re-randomizing on every render.
+// 8 hues spaced 45° apart around the wheel — the maximum equal spacing for 8 colors — so any
+// table of up to 8 characters gets colors that are actually easy to tell apart at a glance, not
+// just "different" in the technical sense a plain hash could land you (two arbitrary hashed hues
+// can easily fall 10-15° apart and read as near-identical browns). Offset from 0/90/180/270 so
+// none of them sit on top of the roll-total outcome colors (sage ~100°, amber ~36°, danger ~4°).
+const ROLL_LOG_NAME_HUES = [20, 65, 110, 155, 200, 245, 290, 335];
+
+function colorForCharacterId(id) {
+  // Index by the character's position in the roster (stable insertion order, already persisted)
+  // rather than hashing — this is what actually guarantees zero collisions for any table with up
+  // to 8 characters, since distinct roster positions mod 8 stay distinct up to that count. A
+  // character no longer in the roster (removed after it had already rolled) falls back to a hash
+  // instead, so its old log entries still get a stable color, just without the collision guarantee.
+  const roster = getRoster();
+  let idx = roster.findIndex((r) => r.id === id);
+  if (idx < 0) {
+    const str = String(id || "");
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    idx = Math.abs(hash);
+  }
+  const hue = ROLL_LOG_NAME_HUES[idx % ROLL_LOG_NAME_HUES.length];
+  return `hsl(${hue}, 60%, 32%)`; // dark/saturated enough to stay readable on the parchment list
 }
 
 function rollDice(character) {
@@ -2465,36 +2504,64 @@ function renderRollLogPanel() {
   if (entries.length === 0) {
     list.appendChild(el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
   } else {
-    // Newest first — the array itself stores oldest-first (append + shift-trim), so reverse only
-    // for display.
-    entries
-      .slice()
-      .reverse()
-      .forEach((entry) => {
-        const row = el("div", { class: "roll-log-entry" });
-        const [d1, d2] = entry.dice || [0, 0];
-        row.appendChild(
-          el("div", {
-            class: "roll-log-entry-text",
-            text: t("rollLogEntryFormat", entry.characterName, d1, d2, entry.power, entry.total),
+    // Oldest first, newest at the bottom — like a chat log. The array is already stored in that
+    // order (append + shift-trim off the front), so no reordering needed for display; just keep
+    // the list scrolled to the bottom (below) so the newest roll is what's actually in view.
+    entries.forEach((entry) => {
+      const row = el("div", { class: "roll-log-entry" });
+      const [d1, d2] = entry.dice || [0, 0];
+
+      const topLine = el("div", { class: "roll-log-entry-top" });
+      topLine.appendChild(
+        el("span", {
+          class: "roll-log-entry-name",
+          style: "color: " + colorForCharacterId(entry.characterId),
+          text: (entry.characterName || "") + ":",
+        })
+      );
+      if (entry.timestamp) {
+        topLine.appendChild(
+          el("span", {
+            class: "roll-log-entry-time",
+            text: new Date(entry.timestamp).toLocaleTimeString(lang === "it" ? "it-IT" : "en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           })
         );
-        if (entry.timestamp) {
-          row.appendChild(
-            el("div", {
-              class: "roll-log-entry-time",
-              text: new Date(entry.timestamp).toLocaleTimeString(lang === "it" ? "it-IT" : "en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-            })
-          );
-        }
-        list.appendChild(row);
-      });
+      }
+      row.appendChild(topLine);
+
+      const mathLine = el("div", { class: "roll-log-entry-math" });
+      mathLine.appendChild(el("span", { text: `2d6 (${d1}+${d2}) + ` }));
+      // Bold, plain black — see .roll-log-power-value in style.css for why this isn't
+      // accent-colored like the sheet's own Total Power chip.
+      mathLine.appendChild(el("span", { class: "roll-log-power-value", text: String(entry.power) }));
+      mathLine.appendChild(el("span", { text: " = " }));
+      const outcome = rollOutcome(entry.total);
+      mathLine.appendChild(
+        el("span", {
+          class: "roll-log-total roll-log-total-" + outcome,
+          title: t("rollOutcome" + outcome[0].toUpperCase() + outcome.slice(1)),
+          text: String(entry.total),
+        })
+      );
+      row.appendChild(mathLine);
+
+      list.appendChild(row);
+    });
   }
   panel.appendChild(list);
   widget.appendChild(panel);
+
+  // Keep the newest roll (now at the bottom) in view. Deferred a frame: `list` isn't laid out
+  // yet — scrollHeight on a still-detached node reads 0 — and every call site attaches `widget`
+  // to the document synchronously right after this function returns, so by the next frame it has
+  // real layout to scroll against.
+  requestAnimationFrame(() => {
+    list.scrollTop = list.scrollHeight;
+  });
+
   return widget;
 }
 

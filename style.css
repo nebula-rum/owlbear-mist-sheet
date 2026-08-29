@@ -1281,17 +1281,50 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 }
 .roll-log-entry {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   border-bottom: 1px solid var(--border-soft);
   padding-bottom: 6px;
 }
 .roll-log-entry:last-child { border-bottom: none; padding-bottom: 0; }
-.roll-log-entry-text { font-size: 0.85em; line-height: 1.3; }
+
+.roll-log-entry-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* Character name — bold, same display face as the rest of the sheet's headings. */
+.roll-log-entry-name {
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--ink);
+}
 .roll-log-entry-time {
   flex-shrink: 0;
   font-size: 0.7em;
   color: var(--ink-soft);
   white-space: nowrap;
 }
+
+.roll-log-entry-math { font-size: 0.85em; line-height: 1.3; }
+/* The Power number: bold and plain black/ink — deliberately not accent-colored like the sheet's
+   own Total Power chip, so it doesn't compete with the roll total's success/mixed/failure color
+   right next to it in the same line. */
+.roll-log-power-value {
+  font-weight: 700;
+  color: var(--ink);
+}
+/* The roll's total — bold, and colored by the 2d6+Potere result band (10+/7-9/6-), using the
+   same three theme colors already used elsewhere for positive/neutral/negative (Status polarity,
+   Weakness tags): sage for a full success, amber for mixed, the weakness/danger red for a
+   failure. */
+.roll-log-total {
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  font-size: 1.05em;
+}
+.roll-log-total-success { color: var(--sage); }
+.roll-log-total-mixed { color: var(--amber); }
+.roll-log-total-failure { color: var(--danger); }
