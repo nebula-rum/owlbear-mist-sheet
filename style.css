@@ -538,11 +538,21 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .category-select.no-category { background-color: var(--parchment-3); color: var(--ink); border-color: var(--border-soft); }
 .category-empty-hint { font-size: 0.78em; color: var(--ink-soft); font-style: italic; }
 
-/* Settings tab (GM only) — one row per campaign Theme category */
+/* Settings tab (GM only) — a plain top-to-bottom list, one row per campaign Theme category.
+   Deliberately its own class rather than the Backpack's .list-rows: that one lays its children
+   out in CSS multi-column masonry (right for a grid of short items), which — once the window was
+   wide enough to fit more than one 230px column — was slicing straight through each row's flex
+   children instead of just stacking rows, scattering the remove button away from its own row. */
+.category-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .category-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  max-width: 420px;
   background: rgba(255,255,255,0.35);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -550,6 +560,7 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 }
 .category-label-input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   padding: 2px 0;
@@ -1316,15 +1327,27 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   font-weight: 700;
   color: var(--ink);
 }
-/* The roll's total — bold, and colored by the 2d6+Potere result band (10+/7-9/6-), using the
-   same three theme colors already used elsewhere for positive/neutral/negative (Status polarity,
-   Weakness tags): sage for a full success, amber for mixed, the weakness/danger red for a
-   failure. */
+/* The roll's total — a small solid badge colored by the 2d6+Potere result band (10+/7-9/6-).
+   First tried as plain colored text in the theme's own muted sage/amber/danger tones (matching
+   Status polarity and Weakness tags elsewhere), but the user found those too washed out to read
+   at a glance — muted earth tones on a cream parchment background just don't have much contrast,
+   especially amber-on-parchment. A solid badge with white text sidesteps that entirely: contrast
+   against white doesn't depend on the page background at all, and three vivid, evenly-spaced
+   hues (green/orange/red — an actual "traffic light") are far easier to tell apart at a glance
+   than three muted ones ever were. Deliberately its own colors, not --sage/--amber/--danger —
+   this needed genuinely more saturated, higher-contrast versions than the rest of the sheet uses,
+   and reusing those shared variables would have meant either changing them everywhere else too or
+   not solving the actual complaint. */
 .roll-log-total {
   font-family: "Cinzel", Georgia, serif;
   font-weight: 700;
-  font-size: 1.05em;
+  font-size: 0.92em;
+  color: #fff;
+  display: inline-block;
+  line-height: 1.3;
+  padding: 1px 8px;
+  border-radius: 10px;
 }
-.roll-log-total-success { color: var(--sage); }
-.roll-log-total-mixed { color: var(--amber); }
-.roll-log-total-failure { color: var(--danger); }
+.roll-log-total-success { background: #2e7d32; }
+.roll-log-total-mixed { background: #c1650a; }
+.roll-log-total-failure { background: #b3261e; }

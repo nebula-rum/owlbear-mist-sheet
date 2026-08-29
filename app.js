@@ -2361,7 +2361,13 @@ function renderSettingsTab() {
   );
   wrap.appendChild(el("div", { class: "hint" }, t("settingsHint")));
 
-  const rows = el("div", { class: "list-rows" });
+  // A plain vertical stack, not .list-rows' masonry columns (that class packs short Backpack
+  // items tightly side by side, which is right for a card grid but wrong here: it was slicing
+  // each category row's flex children — color swatches, label, remove button — across column
+  // boundaries whenever the window was wide enough to fit more than one 230px column, scattering
+  // the ✕ button away from its own row and reordering rows top-to-bottom-then-across instead of
+  // simply top to bottom. See .category-rows in style.css.
+  const rows = el("div", { class: "category-rows" });
   getCampaign().themeCategories.forEach((cat) => {
     const row = el("div", { class: "category-row" });
     row.appendChild(
