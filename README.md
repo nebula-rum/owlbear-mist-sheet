@@ -8,6 +8,8 @@ A custom Owlbear Rodeo extension for Mist Engine games (Legend in the Mist, City
 - A shared **Compagnia** tab — the party's one Company Theme card.
 - A GM-only **Roster** tab: create characters, assign each to a specific player / everyone / GM-only, and edit any character's full sheet directly.
 - A GM-only **Settings** tab for campaign Theme categories (colors + labels).
+- A live **Total Power** tally: tick the tags/statuses that apply to an upcoming roll and it sums them per the rulebook's math, plus a manual +/- modifier.
+- A **roll button** (🎲, next to Total Power) that rolls 2d6, adds Total Power, and logs the result to a small always-on **roll log** panel docked in the bottom-right corner — visible to the whole table and persisted, so it survives everyone leaving and reopening Owlbear.
 - English/Italian toggle, per-player text size (A−/A+), and an "expand" button that opens a larger view with Theme cards side by side.
 
 ## Install
@@ -39,12 +41,13 @@ It's a few plain files, no build step:
 - `app.js` — data model, rendering, the EN/IT `LABELS` dictionary.
 - `style.css` — visual design (palette as CSS variables at the top).
 - `owlbear-extension.json` — extension manifest Owlbear reads.
+- `background.html` — a tiny page Owlbear loads automatically for every connected player (via the manifest's `background_url`), independent of the toolbar popover. Its only job is opening the roll-log corner panel (`index.html?view=rolllog`) anchored to the bottom-right of the screen.
 
-Open `index.html` directly in a browser (or `python3 -m http.server`) to preview changes outside Owlbear first — it falls back to local-only storage automatically.
+Open `index.html` directly in a browser (or `python3 -m http.server`) to preview changes outside Owlbear first — it falls back to local-only storage automatically (the roll log becomes a fixed corner overlay on the same page in this mode, since there's no real `OBR.popover` to anchor to outside a room).
 
 To run your own copy instead of using the hosted link above: fork this repo, enable GitHub Pages (Settings → Pages → Deploy from branch, `main` / root), then point Owlbear at `https://<you>.github.io/<repo>/owlbear-extension.json`.
 
-- `owlbear-extension.json`'s `icon`/`popover` paths are already set to `/owlbear-mist-sheet/icon.svg` and `/owlbear-mist-sheet/index.html`, matching this repo's name — GitHub Pages project repos serve under a `/<repo>/` subpath, not the domain root, so an unprefixed `/icon.svg` 404s. **If you rename or fork under a different repo name**, edit those two paths to match your actual repo name, commit, then reinstall the extension.
+- `owlbear-extension.json`'s `icon`/`popover`/`background_url` paths are already set to `/owlbear-mist-sheet/...`, matching this repo's name — GitHub Pages project repos serve under a `/<repo>/` subpath, not the domain root, so an unprefixed `/icon.svg` 404s. **If you rename or fork under a different repo name**, edit those three paths to match your actual repo name, commit, then reinstall the extension.
 - Netlify Drop also works, but don't rename the manifest file to `manifest.json` — it 401s on Netlify. `owlbear-extension.json` is fine as-is (and since Netlify serves from the domain root, change the two paths back to `/icon.svg` / `/index.html` there).
 
 PRs and forks welcome.

@@ -1193,3 +1193,105 @@ footer.credits {
   text-align: center;
   padding: 5px 8px;
 }
+
+.dice-roll-btn { flex-shrink: 0; }
+
+/* ---------- Roll log corner panel ---------- */
+/* This page, loaded a third way (?view=rolllog inside a real-OBR background popover — see
+   background.html — or embedded directly as a fixed overlay in standalone/local-preview mode),
+   shows nothing but this widget: no parchment page background, no padding, so only the dice pill
+   or the small panel itself floats over the game table / the sheet underneath. */
+html.roll-log-view,
+body.roll-log-view {
+  background: transparent !important;
+  min-height: 0;
+}
+body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
+
+.roll-log-widget.floating {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 500;
+}
+
+.roll-log-pill {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--ink);
+  color: var(--parchment);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.roll-log-pill:hover { background: #2a2013; }
+
+.roll-log-panel {
+  width: 100%;
+  max-width: 280px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--parchment);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.roll-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  background: linear-gradient(180deg, var(--ink) 0%, #2a2013 100%);
+  flex-shrink: 0;
+}
+.roll-log-title {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.85em;
+  color: var(--parchment);
+  letter-spacing: 0.02em;
+}
+.roll-log-header-btns { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.roll-log-header-btns .icon-btn-round {
+  width: 24px;
+  height: 24px;
+  background: rgba(242,230,201,0.1);
+  color: var(--parchment);
+}
+.roll-log-header-btns .icon-btn-round:hover { background: rgba(242,230,201,0.22); }
+
+.roll-log-list {
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.roll-log-empty {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-size: 0.85em;
+  text-align: center;
+  padding: 10px 4px;
+}
+.roll-log-entry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 6px;
+}
+.roll-log-entry:last-child { border-bottom: none; padding-bottom: 0; }
+.roll-log-entry-text { font-size: 0.85em; line-height: 1.3; }
+.roll-log-entry-time {
+  flex-shrink: 0;
+  font-size: 0.7em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}

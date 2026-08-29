@@ -10,6 +10,7 @@ const ROOM_KEYS = {
   campaign: "com.mistengine.hero-sheet/campaign",
   company: "com.mistengine.hero-sheet/company",
   roster: "com.mistengine.hero-sheet/roster",
+  rollLog: "com.mistengine.hero-sheet/rollLog",
 };
 function characterKey(id) {
   return "com.mistengine.hero-sheet/character/" + id;
@@ -21,6 +22,22 @@ const LOCAL_ROOM_KEY = "mist-hero-sheet-room"; // standalone/local-preview fallb
 // instead of stacked. This query param is how that second load recognizes itself.
 const MODAL_ID = "com.mistengine.hero-sheet/expanded-modal";
 const isModalView = new URLSearchParams(window.location.search).get("view") === "expanded";
+
+// The roll-log corner panel is, likewise, this same app loaded a third time — but as a tiny
+// dedicated page with none of the character-sheet UI, opened automatically (not by the player
+// clicking the toolbar icon) via manifest.background_url + OBR.popover.open (see background.html
+// and rollDice() below). Query param recognized the same way as ?view=expanded above.
+const ROLL_LOG_POPOVER_ID = "com.mistengine.hero-sheet/roll-log-popover";
+const ROLL_LOG_MAX_ENTRIES = 50;
+const ROLL_LOG_COLLAPSED_SIZE = { width: 56, height: 56 };
+const ROLL_LOG_EXPANDED_SIZE = { width: 300, height: 380 };
+const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
+if (isRollLogView) {
+  // This page is just the floating dice pill/panel, not the parchment character sheet — strip
+  // the sheet's page background/padding so only the widget itself shows over the game table.
+  document.documentElement.classList.add("roll-log-view");
+  document.body.classList.add("roll-log-view");
+}
 
 // ---------- localization ----------
 
@@ -143,6 +160,15 @@ const LABELS = {
     totalPowerLabel: "Power",
     powerModifierTitle: "Manual modifier (Favored/Disfavored, GM-granted tags…)",
     resetPowerTitle: "Reset Total Power tally",
+    rollButtonTitle: "Roll 2d6 + Total Power",
+    rollLogTitle: "Roll Log",
+    rollLogEmpty: "No rolls yet.",
+    clearRollLogTitle: "Clear roll history",
+    clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
+    rollLogEntryFormat: (name, d1, d2, power, total) =>
+      `${name} — 2d6 (${d1}+${d2}) + Power ${power} = ${total}`,
+    collapseRollLogTitle: "Collapse",
+    expandRollLogTitle: "Show roll log",
   },
   it: {
     standaloneBanner: "Modalità anteprima locale (non collegata a Owlbear Rodeo) — i dati sono salvati solo in questo browser.",
@@ -262,6 +288,15 @@ const LABELS = {
     totalPowerLabel: "Potere",
     powerModifierTitle: "Modificatore manuale (Favorito/Sfavorito, attributi concessi dal Narratore…)",
     resetPowerTitle: "Azzera il conteggio del Potere",
+    rollButtonTitle: "Tira 2d6 + Potere Totale",
+    rollLogTitle: "Registro dei Tiri",
+    rollLogEmpty: "Nessun tiro ancora.",
+    clearRollLogTitle: "Cancella la cronologia dei tiri",
+    clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
+    rollLogEntryFormat: (name, d1, d2, power, total) =>
+      `${name} — 2d6 (${d1}+${d2}) + Potere ${power} = ${total}`,
+    collapseRollLogTitle: "Comprimi",
+    expandRollLogTitle: "Mostra il registro dei tiri",
   },
 };
 
@@ -443,6 +478,22 @@ function tickToggle(checked, title, onclick) {
     "aria-label": title,
     onclick,
   });
+}
+
+// A six-sided die face (rounded square + 5 pips) — the roll button, and the roll-log panel's
+// collapsed pill icon.
+function diceIcon() {
+  return svgIcon(
+    [
+      ["rect", { x: "3", y: "3", width: "18", height: "18", rx: "4" }],
+      ["circle", { cx: "8", cy: "8", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "16", cy: "8", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "12", cy: "12", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "8", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "16", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
+    ],
+    { size: 15, strokeWidth: 2 }
+  );
 }
 
 // An open book — used for the Background toggle button. Tried a rolled-scroll glyph first, but
@@ -863,6 +914,50 @@ function resetTotalPower(character) {
   rollModifiers.delete(character.id);
 }
 
+// ---------- roll log (2d6 + Total Power, shared + persisted room-wide) ----------
+// A roll is just one more capped array under its own room-metadata key, following the exact same
+// ROOM_KEYS/scheduleRoomSave/OBR.room.onMetadataChange pattern as everything else in this file —
+// every connected client (including the background-popover corner panel, which is this same app
+// loaded with ?view=rolllog) already gets pushed a live update through that listener, so rolling
+// needs no separate broadcast mechanism.
+
+function getRollLog() {
+  const raw = roomMeta[ROOM_KEYS.rollLog];
+  return Array.isArray(raw) ? raw : [];
+}
+
+function rollDice(character) {
+  const d1 = 1 + Math.floor(Math.random() * 6);
+  const d2 = 1 + Math.floor(Math.random() * 6);
+  const power = computeTotalPower(character);
+  const entry = {
+    id: uid(),
+    characterId: character.id,
+    characterName: character.name || t("characterNamePlaceholder"),
+    dice: [d1, d2],
+    power,
+    total: d1 + d2 + power,
+    timestamp: Date.now(),
+  };
+  const log = getRollLog().concat(entry);
+  while (log.length > ROLL_LOG_MAX_ENTRIES) log.shift();
+  roomMeta[ROOM_KEYS.rollLog] = log;
+  scheduleRoomSave(ROOM_KEYS.rollLog);
+  // Deliberately does NOT touch rollSelection/rollModifiers — rolling and the manual Reset button
+  // stay independent actions (see resetTotalPower's own comment on why Reset is manual).
+
+  // In standalone/local-preview mode there's no background popover — the corner widget is instead
+  // embedded directly in this same page (see renderApp()) — so refresh it immediately rather than
+  // waiting on the localStorage round-trip that real OBR clients rely on for their own copy.
+  if (backend === "standalone") refreshRollLogWidget();
+}
+
+function clearRollLog() {
+  roomMeta[ROOM_KEYS.rollLog] = [];
+  scheduleRoomSave(ROOM_KEYS.rollLog);
+  if (backend === "standalone") refreshRollLogWidget();
+}
+
 // ---------- roster (GM-managed index of characters) ----------
 
 function defaultRosterEntry(id) {
@@ -935,6 +1030,13 @@ function renderApp() {
   closeConfirmDialog();
   app.innerHTML = "";
 
+  // The roll-log corner panel's own dedicated page (?view=rolllog, see background.html) shows
+  // nothing but the dice pill/panel — none of the character-sheet chrome below.
+  if (isRollLogView) {
+    app.appendChild(renderRollLogPanel());
+    return;
+  }
+
   if (backend === "standalone") {
     app.appendChild(el("div", { class: "standalone-banner" }, t("standaloneBanner")));
   }
@@ -949,6 +1051,14 @@ function renderApp() {
   app.appendChild(content);
 
   app.appendChild(el("footer", { class: "credits" }, t("footer")));
+
+  // Real Owlbear gets the shared roll log via its own always-on background-popover page instead
+  // (see background.html) — but that mechanism doesn't exist outside a real room, so standalone/
+  // local-preview mode embeds the identical panel here as a fixed corner overlay so the feature
+  // stays testable without Owlbear.
+  if (backend === "standalone") {
+    app.appendChild(renderRollLogPanel());
+  }
 }
 
 function renderActiveTab() {
@@ -1182,6 +1292,17 @@ function renderNameAndBackgroundSection(character, save) {
   });
   resetBtn.appendChild(resetIcon());
   cluster.appendChild(resetBtn);
+
+  // Rolls 2d6, adds the Total Power shown in powerValueEl above, and logs the result to the
+  // shared, persistent corner panel every connected player sees (see rollDice()/background.html).
+  const rollBtn = el("button", {
+    class: "icon-btn-round dice-roll-btn",
+    title: t("rollButtonTitle"),
+    "aria-label": t("rollButtonTitle"),
+    onclick: () => rollDice(character),
+  });
+  rollBtn.appendChild(diceIcon());
+  cluster.appendChild(rollBtn);
 
   const bgToggle = el("button", {
     class: "icon-btn-round background-toggle",
@@ -2261,6 +2382,120 @@ function renderSettingsTab() {
   );
 
   return wrap;
+}
+
+// ---------- roll log corner panel ----------
+// In real Owlbear this renders alone on its own tiny page (?view=rolllog, opened automatically by
+// background.html into a corner-anchored popover — see manifest's background_url). In
+// standalone/local-preview mode there's no OBR.popover to anchor to, so the exact same panel is
+// instead embedded directly into the main page as a `position: fixed` overlay (see renderApp()).
+
+let rollLogExpanded = false; // per-page UI state only — not synced, resets on reload/reconnect
+
+function setRollLogPopoverSize(expanded) {
+  if (backend !== "obr") return; // standalone's embedded overlay just resizes itself via CSS
+  const size = expanded ? ROLL_LOG_EXPANDED_SIZE : ROLL_LOG_COLLAPSED_SIZE;
+  OBR.popover.setWidth(ROLL_LOG_POPOVER_ID, size.width);
+  OBR.popover.setHeight(ROLL_LOG_POPOVER_ID, size.height);
+}
+
+function toggleRollLogExpanded() {
+  rollLogExpanded = !rollLogExpanded;
+  setRollLogPopoverSize(rollLogExpanded);
+  if (isRollLogView) renderApp();
+  else refreshRollLogWidget();
+}
+
+// Re-renders just the corner widget in place, without tearing down the rest of the character
+// sheet — used after a local roll/clear in standalone mode (see rollDice()/clearRollLog()) so the
+// panel updates instantly instead of waiting on a remote-metadata round trip that will never come.
+function refreshRollLogWidget() {
+  const existing = document.getElementById("roll-log-widget");
+  if (!existing) return;
+  existing.replaceWith(renderRollLogPanel());
+}
+
+function renderRollLogPanel() {
+  const widget = el("div", {
+    id: "roll-log-widget",
+    class:
+      "roll-log-widget" +
+      (isRollLogView ? "" : " floating") +
+      (rollLogExpanded ? " expanded" : " collapsed"),
+  });
+
+  if (!rollLogExpanded) {
+    const pill = el("button", {
+      class: "roll-log-pill",
+      title: t("expandRollLogTitle"),
+      "aria-label": t("expandRollLogTitle"),
+      onclick: () => toggleRollLogExpanded(),
+    });
+    pill.appendChild(diceIcon());
+    widget.appendChild(pill);
+    return widget;
+  }
+
+  const panel = el("div", { class: "roll-log-panel" });
+
+  const header = el("div", { class: "roll-log-header" });
+  header.appendChild(el("span", { class: "roll-log-title", text: t("rollLogTitle") }));
+  const headerBtns = el("div", { class: "roll-log-header-btns" });
+  const clearBtn = el("button", {
+    class: "icon-btn-round roll-log-clear-btn",
+    title: t("clearRollLogTitle"),
+    "aria-label": t("clearRollLogTitle"),
+    onclick: () => showConfirmDialog(t("clearRollLogConfirm"), () => clearRollLog()),
+  });
+  clearBtn.appendChild(trashIcon());
+  headerBtns.appendChild(clearBtn);
+  const collapseBtn = el("button", {
+    class: "icon-btn-round",
+    title: t("collapseRollLogTitle"),
+    "aria-label": t("collapseRollLogTitle"),
+    onclick: () => toggleRollLogExpanded(),
+  });
+  collapseBtn.appendChild(collapseIcon());
+  headerBtns.appendChild(collapseBtn);
+  header.appendChild(headerBtns);
+  panel.appendChild(header);
+
+  const list = el("div", { class: "roll-log-list" });
+  const entries = getRollLog();
+  if (entries.length === 0) {
+    list.appendChild(el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
+  } else {
+    // Newest first — the array itself stores oldest-first (append + shift-trim), so reverse only
+    // for display.
+    entries
+      .slice()
+      .reverse()
+      .forEach((entry) => {
+        const row = el("div", { class: "roll-log-entry" });
+        const [d1, d2] = entry.dice || [0, 0];
+        row.appendChild(
+          el("div", {
+            class: "roll-log-entry-text",
+            text: t("rollLogEntryFormat", entry.characterName, d1, d2, entry.power, entry.total),
+          })
+        );
+        if (entry.timestamp) {
+          row.appendChild(
+            el("div", {
+              class: "roll-log-entry-time",
+              text: new Date(entry.timestamp).toLocaleTimeString(lang === "it" ? "it-IT" : "en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            })
+          );
+        }
+        list.appendChild(row);
+      });
+  }
+  panel.appendChild(list);
+  widget.appendChild(panel);
+  return widget;
 }
 
 // ---------- boot ----------
