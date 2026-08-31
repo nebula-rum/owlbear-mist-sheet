@@ -65,8 +65,25 @@ function rollLogCollapsedSize() {
 }
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
+//
+// Height grows to fit every current Story Tag/Status (see rollLogSceneExtraHeight) instead of
+// capping that block and letting it scroll — the user explicitly wants every scene item visible
+// at once in this always-open widget, not hidden behind a scrollbar. .roll-log-panel's own CSS
+// max-height (min(340px, real viewport minus clearance)) still applies underneath this as a hard
+// safety net for a screen too small to fit everything — see that rule's own comment — so this can
+// ask for more room than truly exists without breaking anything, it'll just scroll in that
+// extreme case instead of the usual "everything visible" outcome.
+function rollLogSceneExtraHeight() {
+  const storyTags = getStoryTags();
+  const count = storyTags.tags.length + storyTags.statuses.length;
+  if (count === 0) return 0;
+  const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
+  const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
+  const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
+  return SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING;
+}
 function rollLogExpandedSize() {
-  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() };
+  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() + rollLogSceneExtraHeight() };
 }
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 // Set on the URL only by openRollLogPopover()'s deliberate "activate" action below — background.html's
@@ -152,8 +169,8 @@ const LABELS = {
     removeStatus: "Remove status",
     removeStatusConfirm: "Remove this status?",
     sceneTitle: "Story Tags & Statuses",
-    sceneHintGm: "Give the scene tags and statuses of its own — an enemy's wound, a dim-light area — that affect everyone's roll, not just one character's.",
-    sceneHintPlayer: "The Narrator can add tags and statuses that affect everyone's roll. Tick one to count it toward your Total Power.",
+    sceneHintGm: "Give the scene tags and statuses of its own — an enemy's wound, a dim-light area. Players tick these from their own Active Tags section and choose their own +/-.",
+    sceneTagsTitle: "Scene Tags",
     sceneEmpty: "Nothing active in the scene right now.",
     addStoryTag: "+ Tag",
     addStoryStatus: "+ Status",
@@ -223,8 +240,8 @@ const LABELS = {
     powerModifierTitle: "Manual modifier (Favored/Disfavored, GM-granted tags…)",
     resetPowerTitle: "Reset Total Power tally",
     rollButtonTitle: "Roll 2d6 + Total Power",
-    rollLogTitle: "Roll Log",
-    rollLogSceneTitle: "Scene",
+    rollLogTitle: "Scene",
+    rollRegistryTitle: "Roll Registry",
     rollLogEmpty: "No rolls yet.",
     clearRollLogTitle: "Clear roll history",
     clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
@@ -305,8 +322,8 @@ const LABELS = {
     removeStatus: "Rimuovi stato",
     removeStatusConfirm: "Rimuovere questo stato?",
     sceneTitle: "Attributi e Stati della Scena",
-    sceneHintGm: "Dai alla scena attributi e stati propri — la ferita di un nemico, una zona in penombra — che influenzano il tiro di tutti, non solo quello di un personaggio.",
-    sceneHintPlayer: "Il Narratore può aggiungere attributi e stati che influenzano il tiro di tutti. Selezionane uno per farlo contare nel tuo Potere Totale.",
+    sceneHintGm: "Dai alla scena attributi e stati propri — la ferita di un nemico, una zona in penombra. I giocatori li selezionano dalla propria sezione Attributi Attivi e scelgono da soli il proprio +/-.",
+    sceneTagsTitle: "Attributi di Scena",
     sceneEmpty: "Nessun elemento attivo nella scena al momento.",
     addStoryTag: "+ Attributo",
     addStoryStatus: "+ Stato",
@@ -376,8 +393,8 @@ const LABELS = {
     powerModifierTitle: "Modificatore manuale (Favorito/Sfavorito, attributi concessi dal Narratore…)",
     resetPowerTitle: "Azzera il conteggio del Potere",
     rollButtonTitle: "Tira 2d6 + Potere Totale",
-    rollLogTitle: "Registro dei Tiri",
-    rollLogSceneTitle: "Scena",
+    rollLogTitle: "Scena",
+    rollRegistryTitle: "Registro dei Tiri",
     rollLogEmpty: "Nessun tiro ancora.",
     clearRollLogTitle: "Cancella la cronologia dei tiri",
     clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
@@ -1134,6 +1151,12 @@ function defaultCharacter(id) {
     tags: [],
     statuses: [],
     notes: "",
+    // Per-character override of a Story Tag/Status's polarity (storyTagOrStatusId -> "positive" |
+    // "negative") — see storyItemPolarity() below. The GM authors one default polarity per Story
+    // item, but the same scene condition can cut opposite ways for different characters (dim
+    // light hurts most people, but not someone with darkvision), so each character keeps their
+    // own override instead of sharing a single polarity across the whole table.
+    storyPolarity: {},
   };
 }
 
@@ -1184,6 +1207,12 @@ function normalizeCharacter(raw, id) {
       }))
     : [];
   c.statuses = Array.isArray(c.statuses) ? c.statuses.map(normalizeStatus) : [];
+  c.storyPolarity = {};
+  if (raw && raw.storyPolarity && typeof raw.storyPolarity === "object") {
+    Object.entries(raw.storyPolarity).forEach(([id, polarity]) => {
+      if (polarity === "positive" || polarity === "negative") c.storyPolarity[id] = polarity;
+    });
+  }
   c.themes.forEach((th) => {
     th.power = Array.isArray(th.power) ? th.power : [];
     th.weakness = Array.isArray(th.weakness) ? th.weakness : [];
@@ -1244,9 +1273,11 @@ function computeTotalPower(character) {
   });
 
   // Story Tags (GM-authored, scene-wide — see the Scene tab) count exactly like a personal Active
-  // Tag: every ticked one adds its own +1/-1, uncapped, stacking with everything else here.
+  // Tag: every ticked one adds its own +1/-1, uncapped, stacking with everything else here. Uses
+  // THIS character's own polarity override where set (see storyItemPolarity) since the same scene
+  // condition can cut opposite ways for different characters.
   getStoryTags().tags.forEach((tag) => {
-    if (rollSelection.has(tag.id)) total += tag.polarity === "negative" ? -1 : 1;
+    if (rollSelection.has(tag.id)) total += storyItemPolarity(character, tag) === "negative" ? -1 : 1;
   });
 
   // Backpack items tick/burn exactly like a Power tag (+1 ticked, +3 instead if burned).
@@ -1259,13 +1290,17 @@ function computeTotalPower(character) {
   // count total toward a roll, regardless of whether it belongs to the character or the scene.
   let bestPositive = 0;
   let worstNegative = 0;
-  character.statuses.concat(getStoryTags().statuses).forEach((s) => {
+  const tallyStatus = (s, polarity) => {
     if (!rollSelection.has(s.id)) return;
     const level = s.boxes.lastIndexOf(true) + 1; // highest ticked box = current level; 0 if none
     if (level <= 0) return;
-    if (s.polarity === "negative") worstNegative = Math.max(worstNegative, level);
+    if (polarity === "negative") worstNegative = Math.max(worstNegative, level);
     else bestPositive = Math.max(bestPositive, level);
-  });
+  };
+  character.statuses.forEach((s) => tallyStatus(s, s.polarity));
+  // Story Statuses use THIS character's own polarity override where set (see storyItemPolarity),
+  // same reasoning as Story Tags above.
+  getStoryTags().statuses.forEach((s) => tallyStatus(s, storyItemPolarity(character, s)));
   total += bestPositive - worstNegative;
 
   total += rollModifiers.get(character.id) || 0;
@@ -1493,6 +1528,27 @@ function bindStoryTags() {
   return { storyTags, save: () => scheduleRoomSave(ROOM_KEYS.storyTags) };
 }
 
+// The GM authors one default polarity per Story Tag/Status, but each character can flip it for
+// themselves (see character.storyPolarity above) since the same scene condition can help one
+// character and hurt another. Falls back to the GM's authored default when this character hasn't
+// overridden it.
+function storyItemPolarity(character, item) {
+  // Defensive fallback, not just belt-and-suspenders: bindCharacter() (see its own comment) reuses
+  // whatever object is already sitting in roomMeta for this id as-is, WITHOUT re-running it through
+  // normalizeCharacter — so a character saved before storyPolarity existed (any real character in
+  // an already-live room, the moment this feature ships) legitimately has no storyPolarity field
+  // yet the first time it's touched this session.
+  const override = character.storyPolarity && character.storyPolarity[item.id];
+  return override === "positive" || override === "negative" ? override : item.polarity;
+}
+
+function setStoryItemPolarity(character, save, item, polarity) {
+  if (!character.storyPolarity) character.storyPolarity = {};
+  character.storyPolarity[item.id] = polarity;
+  save();
+  refreshTabContent();
+}
+
 // ---------- top-level render ----------
 
 function renderApp() {
@@ -1510,6 +1566,7 @@ function renderApp() {
     app.appendChild(el("div", { class: "standalone-banner" }, t("standaloneBanner")));
   }
 
+  if (activeTab === "scene" && !isGM()) activeTab = "sheet";
   if (activeTab === "roster" && !isGM()) activeTab = "sheet";
   if (activeTab === "settings" && !isGM()) activeTab = "sheet";
 
@@ -1532,7 +1589,7 @@ function renderApp() {
 
 function renderActiveTab() {
   if (activeTab === "company") return renderCompanyTab();
-  if (activeTab === "scene") return renderSceneTab();
+  if (activeTab === "scene" && isGM()) return renderSceneTab();
   if (activeTab === "roster" && isGM()) return renderRosterTab();
   if (activeTab === "settings" && isGM()) return renderSettingsTab();
   return renderMySheetTab();
@@ -1611,16 +1668,17 @@ function renderTopbar() {
       text: t("tabCompany"),
       onclick: () => { activeTab = "company"; renderApp(); },
     }),
-    // Visible to everyone, not GM-gated like Roster/Settings below — every player needs to be
-    // able to tick a story tag/status into their own roll, not just the GM who authors them.
-    el("button", {
-      class: "tab-btn" + (activeTab === "scene" ? " active" : ""),
-      text: t("tabScene"),
-      onclick: () => { activeTab = "scene"; renderApp(); },
-    }),
   ];
   if (isGM()) {
     tabButtons.push(
+      // GM-only: the GM authors Story Tags/Statuses here, but every player ticks them straight
+      // from their own Active Tags section (see renderActiveTagsSection) instead of needing to
+      // switch to this tab — so unlike the old design, players never need to open it at all.
+      el("button", {
+        class: "tab-btn" + (activeTab === "scene" ? " active" : ""),
+        text: t("tabScene"),
+        onclick: () => { activeTab = "scene"; renderApp(); },
+      }),
       el("button", {
         class: "tab-btn" + (activeTab === "roster" ? " active" : ""),
         text: t("tabRoster"),
@@ -2572,6 +2630,99 @@ function renderActiveTagsSection(character, save) {
   });
 
   section.appendChild(list);
+
+  // Story Tags/Statuses (GM-authored on the Scene tab, everyone else GM-only there — see
+  // renderSceneTab) surface here too, right in each character's own Active Tags section, so a
+  // player never has to switch tabs mid-roll to use one. Their own color (campaign.storyTagColor/
+  // storyStatusColor) keeps them visually distinct from this character's personal tags/statuses
+  // above. Text/severity level are read-only (span, not input; boxes not clickable) since only
+  // the GM authors those — but polarity is each character's OWN choice (storyItemPolarity/
+  // setStoryItemPolarity), not the GM's default, since the same scene condition can help one
+  // character and hurt another (a torch helps you, blinds someone with darkvision).
+  const storyTags = getStoryTags();
+  if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
+    const storyTagColorClass = "color-" + campaign.storyTagColor;
+    const storyStatusColorClass = "color-" + campaign.storyStatusColor;
+    section.appendChild(el("label", { class: "field-label", text: t("sceneTagsTitle") }));
+    const storyList = el("div", { class: "active-tags-list" });
+
+    storyTags.tags.forEach((tag) => {
+      const polarity = storyItemPolarity(character, tag);
+      const chip = el("div", { class: "active-tag-chip " + storyTagColorClass });
+      chip.appendChild(el("span", { class: "story-tag-text", text: tag.text || t("storyTagPlaceholder") }));
+      chip.appendChild(
+        el("button", {
+          class: "status-polarity-toggle " + (polarity === "negative" ? "negative" : "positive"),
+          title: polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
+          text: polarity === "negative" ? "−" : "+",
+          onclick: () => {
+            setStoryItemPolarity(character, save, tag, polarity === "negative" ? "positive" : "negative");
+          },
+        })
+      );
+      chip.appendChild(
+        tickToggle(rollSelection.has(tag.id), t("tickStoryTagTitle"), () => {
+          if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
+          else rollSelection.add(tag.id);
+          refreshTabContent();
+        })
+      );
+      storyList.appendChild(chip);
+    });
+
+    storyTags.statuses.forEach((s) => {
+      const polarity = storyItemPolarity(character, s);
+      const card = el("div", { class: "status-card " + storyStatusColorClass });
+      const topRow = el("div", { class: "status-top-row" });
+      topRow.appendChild(el("span", { class: "story-tag-text", text: s.name || t("storyStatusPlaceholder") }));
+      topRow.appendChild(
+        el("button", {
+          class: "status-polarity-toggle " + (polarity === "negative" ? "negative" : "positive"),
+          title: polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
+          text: polarity === "negative" ? "−" : "+",
+          onclick: () => {
+            setStoryItemPolarity(character, save, s, polarity === "negative" ? "positive" : "negative");
+          },
+        })
+      );
+      // Radio-style within the story pool only — cross-pool exclusion with this character's own
+      // personal Statuses isn't attempted since computeTotalPower() already takes the max across
+      // both pools regardless of how many are ticked, so two simultaneously-ticked positives from
+      // different pools are harmless, just not additive.
+      topRow.appendChild(
+        tickToggle(
+          rollSelection.has(s.id),
+          polarity === "negative" ? t("tickStatusNegativeTitle") : t("tickStatusPositiveTitle"),
+          () => {
+            if (rollSelection.has(s.id)) {
+              rollSelection.delete(s.id);
+            } else {
+              storyTags.statuses.forEach((other) => {
+                if (other.id !== s.id && storyItemPolarity(character, other) === polarity) rollSelection.delete(other.id);
+              });
+              rollSelection.add(s.id);
+            }
+            refreshTabContent();
+          }
+        )
+      );
+      card.appendChild(topRow);
+
+      // Severity level is scene state the GM sets on the Scene tab, not something a player
+      // uses/spends the way a tick is — read-only here, boxes not clickable.
+      const boxesRow = el("div", { class: "status-boxes" });
+      s.boxes.forEach((on, i) => {
+        boxesRow.appendChild(
+          el("button", { class: "status-box readonly" + (on ? " on" : ""), text: String(i + 1), disabled: "disabled" })
+        );
+      });
+      card.appendChild(boxesRow);
+      storyList.appendChild(card);
+    });
+
+    section.appendChild(storyList);
+  }
+
   return section;
 }
 
@@ -2656,15 +2807,15 @@ function renderCompanyTab() {
 }
 
 // ---------- Scene tab (GM authors, everyone ticks) ----------
-// Story Tags & Statuses represent conditions the Narrator gives the SCENE, not a character —
-// an enemy's wound, a dim-light area — so they need to modify everyone's roll, not just one
-// sheet's. Structurally this mirrors renderActiveTagsSection (same chip/card markup, same
-// tickToggle-into-rollSelection mechanism, same radio-style status exclusion) rather than sharing
-// code with it: the two differ in exactly one axis (who may add/rename/remove) but are otherwise
-// small enough that forcing a shared abstraction added more indirection than it saved.
+// Story Tags & Statuses represent conditions the Narrator gives the SCENE, not a character — an
+// enemy's wound, a dim-light area — so they need to modify everyone's roll, not just one sheet's.
+// This tab is GM-only (authoring/removal); players never open it — instead the same items surface
+// directly inside each character's own Active Tags section (see renderActiveTagsSection), each
+// player ticking them and choosing their own +/- there. So unlike a first pass at this feature,
+// there's no tick-toggle or read-only branch here at all — every control on this tab always
+// mutates the shared storyTags object, same as Company tab's GM-only textareas.
 
 function renderSceneTab() {
-  const gm = isGM();
   const campaign = getCampaign();
   const tagColorClass = "color-" + campaign.storyTagColor;
   const statusColorClass = "color-" + campaign.storyStatusColor;
@@ -2672,30 +2823,33 @@ function renderSceneTab() {
 
   const wrap = el("div", { class: "section" });
 
-  const titleRow = el("div", { class: "section-title" }, [el("span", { text: t("sceneTitle") })]);
-  if (gm) {
-    const addTagBtn = el("button", {
-      class: "btn small add-btn",
-      text: t("addStoryTag"),
-      onclick: () => {
-        storyTags.tags.push({ id: uid(), text: "", polarity: "positive" });
-        save();
-        refreshTabContent();
-      },
-    });
-    const addStatusBtn = el("button", {
-      class: "btn small add-btn",
-      text: t("addStoryStatus"),
-      onclick: () => {
-        storyTags.statuses.push({ id: uid(), name: "", boxes: [false, false, false, false, false, false], polarity: "positive" });
-        save();
-        refreshTabContent();
-      },
-    });
-    titleRow.appendChild(el("div", { class: "title-buttons" }, [addTagBtn, addStatusBtn]));
-  }
-  wrap.appendChild(titleRow);
-  wrap.appendChild(el("div", { class: "hint" }, gm ? t("sceneHintGm") : t("sceneHintPlayer")));
+  const addTagBtn = el("button", {
+    class: "btn small add-btn",
+    text: t("addStoryTag"),
+    onclick: () => {
+      storyTags.tags.push({ id: uid(), text: "", polarity: "positive" });
+      save();
+      refreshTabContent();
+      refreshRollLogWidget(); // standalone's embedded corner widget doesn't get its own metadata-change tick
+    },
+  });
+  const addStatusBtn = el("button", {
+    class: "btn small add-btn",
+    text: t("addStoryStatus"),
+    onclick: () => {
+      storyTags.statuses.push({ id: uid(), name: "", boxes: [false, false, false, false, false, false], polarity: "positive" });
+      save();
+      refreshTabContent();
+      refreshRollLogWidget();
+    },
+  });
+  wrap.appendChild(
+    el("div", { class: "section-title" }, [
+      el("span", { text: t("sceneTitle") }),
+      el("div", { class: "title-buttons" }, [addTagBtn, addStatusBtn]),
+    ])
+  );
+  wrap.appendChild(el("div", { class: "hint" }, t("sceneHintGm")));
 
   if (storyTags.tags.length === 0 && storyTags.statuses.length === 0) {
     wrap.appendChild(el("div", { class: "party-empty", text: t("sceneEmpty") }));
@@ -2706,54 +2860,43 @@ function renderSceneTab() {
 
   storyTags.tags.forEach((tag) => {
     const chip = el("div", { class: "active-tag-chip " + tagColorClass });
-
-    if (gm) {
-      chip.appendChild(
-        el("input", {
-          type: "text",
-          value: tag.text,
-          placeholder: t("storyTagPlaceholder"),
-          oninput: (e) => { tag.text = e.target.value; save(); },
-        })
-      );
-      chip.appendChild(
-        el("button", {
-          class: "status-polarity-toggle " + (tag.polarity === "negative" ? "negative" : "positive"),
-          title: tag.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-          text: tag.polarity === "negative" ? "−" : "+",
-          onclick: () => {
-            tag.polarity = tag.polarity === "negative" ? "positive" : "negative";
-            save();
-            refreshTabContent();
-          },
-        })
-      );
-    } else {
-      chip.appendChild(el("span", { class: "story-tag-text", text: tag.text || t("storyTagPlaceholder") }));
-    }
     chip.appendChild(
-      tickToggle(rollSelection.has(tag.id), t("tickStoryTagTitle"), () => {
-        if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
-        else rollSelection.add(tag.id);
-        refreshTabContent();
+      el("input", {
+        type: "text",
+        value: tag.text,
+        placeholder: t("storyTagPlaceholder"),
+        oninput: (e) => { tag.text = e.target.value; save(); },
       })
     );
-    if (gm) {
-      const trash = el("button", {
-        class: "chip-trash",
-        title: t("removeStoryTag"),
-        "aria-label": t("removeStoryTag"),
+    // This is just the DEFAULT polarity a new character starts with — each player can flip their
+    // own copy from their Active Tags section (see storyItemPolarity/setStoryItemPolarity).
+    chip.appendChild(
+      el("button", {
+        class: "status-polarity-toggle " + (tag.polarity === "negative" ? "negative" : "positive"),
+        title: tag.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
+        text: tag.polarity === "negative" ? "−" : "+",
         onclick: () => {
-          showConfirmDialog(t("removeStoryTagConfirm"), () => {
-            storyTags.tags = storyTags.tags.filter((tg) => tg.id !== tag.id);
-            save();
-            refreshTabContent();
-          });
+          tag.polarity = tag.polarity === "negative" ? "positive" : "negative";
+          save();
+          refreshTabContent();
         },
-      });
-      trash.appendChild(trashIcon());
-      chip.appendChild(trash);
-    }
+      })
+    );
+    const trash = el("button", {
+      class: "chip-trash",
+      title: t("removeStoryTag"),
+      "aria-label": t("removeStoryTag"),
+      onclick: () => {
+        showConfirmDialog(t("removeStoryTagConfirm"), () => {
+          storyTags.tags = storyTags.tags.filter((tg) => tg.id !== tag.id);
+          save();
+          refreshTabContent();
+          refreshRollLogWidget();
+        });
+      },
+    });
+    trash.appendChild(trashIcon());
+    chip.appendChild(trash);
     list.appendChild(chip);
   });
 
@@ -2761,86 +2904,57 @@ function renderSceneTab() {
     const card = el("div", { class: "status-card " + statusColorClass });
     const topRow = el("div", { class: "status-top-row" });
 
-    if (gm) {
-      topRow.appendChild(
-        el("input", {
-          type: "text",
-          class: "status-name-input",
-          value: s.name,
-          placeholder: t("storyStatusPlaceholder"),
-          oninput: (e) => { s.name = e.target.value; save(); },
-        })
-      );
-      topRow.appendChild(
+    topRow.appendChild(
+      el("input", {
+        type: "text",
+        class: "status-name-input",
+        value: s.name,
+        placeholder: t("storyStatusPlaceholder"),
+        oninput: (e) => { s.name = e.target.value; save(); },
+      })
+    );
+    topRow.appendChild(
+      el("button", {
+        class: "status-polarity-toggle " + (s.polarity === "negative" ? "negative" : "positive"),
+        title: s.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
+        text: s.polarity === "negative" ? "−" : "+",
+        onclick: () => {
+          s.polarity = s.polarity === "negative" ? "positive" : "negative";
+          save();
+          refreshTabContent();
+        },
+      })
+    );
+    const trash = el("button", {
+      class: "chip-trash",
+      title: t("removeStoryStatus"),
+      "aria-label": t("removeStoryStatus"),
+      onclick: () => {
+        showConfirmDialog(t("removeStoryStatusConfirm"), () => {
+          storyTags.statuses = storyTags.statuses.filter((x) => x.id !== s.id);
+          save();
+          refreshTabContent();
+          refreshRollLogWidget();
+        });
+      },
+    });
+    trash.appendChild(trashIcon());
+    topRow.appendChild(trash);
+    card.appendChild(topRow);
+
+    const boxesRow = el("div", { class: "status-boxes" });
+    s.boxes.forEach((on, i) => {
+      boxesRow.appendChild(
         el("button", {
-          class: "status-polarity-toggle " + (s.polarity === "negative" ? "negative" : "positive"),
-          title: s.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-          text: s.polarity === "negative" ? "−" : "+",
+          class: "status-box" + (on ? " on" : ""),
+          text: String(i + 1),
           onclick: () => {
-            s.polarity = s.polarity === "negative" ? "positive" : "negative";
+            s.boxes[i] = !s.boxes[i];
             save();
             refreshTabContent();
           },
         })
       );
-    } else {
-      topRow.appendChild(el("span", { class: "story-tag-text", text: s.name || t("storyStatusPlaceholder") }));
-    }
-    // Radio-style within the story pool only (mirrors renderActiveTagsSection's own personal-pool
-    // exclusion) — cross-pool exclusion with personal Statuses isn't attempted here since
-    // computeTotalPower() already takes the max across both pools regardless of how many are
-    // ticked, so two simultaneously-ticked positives from different pools are harmless, just not
-    // additive.
-    topRow.appendChild(
-      tickToggle(
-        rollSelection.has(s.id),
-        s.polarity === "negative" ? t("tickStatusNegativeTitle") : t("tickStatusPositiveTitle"),
-        () => {
-          if (rollSelection.has(s.id)) {
-            rollSelection.delete(s.id);
-          } else {
-            storyTags.statuses.forEach((other) => {
-              if (other.id !== s.id && other.polarity === s.polarity) rollSelection.delete(other.id);
-            });
-            rollSelection.add(s.id);
-          }
-          refreshTabContent();
-        }
-      )
-    );
-    if (gm) {
-      const trash = el("button", {
-        class: "chip-trash",
-        title: t("removeStoryStatus"),
-        "aria-label": t("removeStoryStatus"),
-        onclick: () => {
-          showConfirmDialog(t("removeStoryStatusConfirm"), () => {
-            storyTags.statuses = storyTags.statuses.filter((x) => x.id !== s.id);
-            save();
-            refreshTabContent();
-          });
-        },
-      });
-      trash.appendChild(trashIcon());
-      topRow.appendChild(trash);
-    }
-    card.appendChild(topRow);
-
-    // Severity level is scene state the Narrator sets (an enemy's wound level, say), not
-    // something a player uses/spends the way a tick is — so unlike the tick-toggle above, only
-    // the GM can move these; everyone else just sees the current level.
-    const boxesRow = el("div", { class: "status-boxes" });
-    s.boxes.forEach((on, i) => {
-      const boxAttrs = { class: "status-box" + (on ? " on" : "") + (gm ? "" : " readonly"), text: String(i + 1) };
-      if (!gm) boxAttrs.disabled = "disabled";
-      else {
-        boxAttrs.onclick = () => {
-          s.boxes[i] = !s.boxes[i];
-          save();
-          refreshTabContent();
-        };
-      }
-      boxesRow.appendChild(el("button", boxAttrs));
     });
     card.appendChild(boxesRow);
     list.appendChild(card);
@@ -3159,6 +3273,8 @@ function renderRollLogPanel() {
   const panel = el("div", { class: "roll-log-panel" });
 
   const header = el("div", { class: "roll-log-header" });
+  // "Scene" is this whole always-open widget's identity now — the two sections inside (Scene Tags,
+  // Roll Registry) get their own headings just below, see rollLogSectionTitle usages above/below.
   header.appendChild(el("span", { class: "roll-log-title", text: t("rollLogTitle") }));
   const headerBtns = el("div", { class: "roll-log-header-btns" });
   // Personal mute toggle — affects only this viewer's own copy of the panel (see
@@ -3201,25 +3317,22 @@ function renderRollLogPanel() {
   // Read-only glance at whatever the GM currently has active in the scene, so a player can tell
   // "is there a story tag/status affecting my roll right now" without leaving this always-open
   // corner popover to go check the Scene tab. Deliberately NOT wired into rollSelection/tick here
-  // — ticking still only happens on the Scene tab itself (see renderSceneTab), which is the one
-  // place guaranteed to be sharing this page's own JS context (rollSelection is a plain in-memory
-  // Set, not synced room metadata — see its own comment above — so a separate popover page in
-  // real Owlbear mode couldn't tick into the same Set even if it tried).
+  // — ticking happens from each character's own Active Tags section instead (see
+  // renderActiveTagsSection), which is the one place guaranteed to be sharing that character's own
+  // JS context (rollSelection is a plain in-memory Set, not synced room metadata — see its own
+  // comment above — so this separate popover page couldn't tick into the same Set even if it
+  // tried).
   //
-  // Sized as its own capped, independently-scrolling block rather than growing the popover itself
-  // to fit — .roll-log-panel already has a fixed max-height and .roll-log-list already degrades
-  // gracefully to "fewer rows visible, scrolls" when squeezed (see its CSS comment), so this block
-  // just claims a small fixed share of that same budget instead of touching the popover's own
-  // OBR.popover.setWidth/setHeight math (rollLogExpandedSize() et al.) — that sizing is already
-  // fiddly enough across real device screens without also making it depend on how many story tags
-  // happen to exist at any given moment.
+  // Every current item is shown in full, no scrolling — see rollLogSceneExtraHeight(), which grows
+  // this popover's requested height to fit all of them (called again from boot()'s
+  // OBR.room.onMetadataChange whenever the count changes while this panel is expanded).
   const storyTags = getStoryTags();
   if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
     const campaign = getCampaign();
     const tagColorClass = "color-" + campaign.storyTagColor;
     const statusColorClass = "color-" + campaign.storyStatusColor;
     const sceneBlock = el("div", { class: "roll-log-scene" });
-    sceneBlock.appendChild(el("div", { class: "roll-log-scene-title", text: t("rollLogSceneTitle") }));
+    sceneBlock.appendChild(el("div", { class: "roll-log-section-title", text: t("sceneTagsTitle") }));
     const sceneList = el("div", { class: "roll-log-scene-list" });
     storyTags.tags.forEach((tag) => {
       sceneList.appendChild(
@@ -3243,6 +3356,7 @@ function renderRollLogPanel() {
     panel.appendChild(sceneBlock);
   }
 
+  panel.appendChild(el("div", { class: "roll-log-section-title roll-log-registry-title", text: t("rollRegistryTitle") }));
   const list = el("div", { class: "roll-log-list" });
   const entries = getRollLog();
   if (entries.length === 0) {
@@ -3382,6 +3496,11 @@ async function boot() {
         pendingRenderAfterEdit = true;
       } else {
         renderApp();
+        // A GM editing Story Tags/Statuses on the Scene tab (a different window entirely) can
+        // change how many exist — re-ask the popover for its ideal size now that renderApp() has
+        // rebuilt this page's own panel with the new count, so it keeps growing/shrinking to fit
+        // every item with no scrolling (see rollLogSceneExtraHeight()). No-op while collapsed.
+        if (isRollLogView && rollLogExpanded) setRollLogPopoverSize(true);
       }
       // Someone (possibly this same client, echoing its own save) just changed room metadata —
       // if the roll log's last entry is one we haven't announced yet, a roll genuinely happened
