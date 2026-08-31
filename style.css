@@ -1372,13 +1372,19 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 .roll-log-header-btns .icon-btn-round:hover { background: rgba(242,230,201,0.22); }
 
 /* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
-   renderRollLogPanel). Every current item shows in full — no internal scrollbar — because
-   rollLogSceneExtraHeight() (app.js) grows the popover's own requested height to fit all of them,
-   re-asked for live via OBR.room.onMetadataChange whenever the count changes while this panel is
-   expanded. flex-shrink:0 so .roll-log-list below is still the one that gives up space first in
-   the rare case the panel's own hard max-height cap (below) can't fit everything after all. */
+   renderRollLogPanel). Grows the popover itself to show every current item at once (see
+   rollLogSceneExtraHeight() in app.js, re-asked for live via OBR.room.onMetadataChange whenever
+   the count changes) up to this same max-height — past that it scrolls internally instead of
+   keeping the popover growing without limit, which was the earlier behavior and had a real
+   problem: enough Story Tags pushed the roll registry below completely out of the panel (this
+   block wasn't allowed to shrink, so ALL the deficit landed on .roll-log-list once the panel hit
+   its own outer max-height cap). Capping here, plus .roll-log-list's own min-height below,
+   guarantees the roll registry always keeps room for a few rows no matter how many Story Tags
+   exist. Keep ROLL_LOG_SCENE_MAX_HEIGHT (app.js) equal to this max-height. */
 .roll-log-scene {
   flex-shrink: 0;
+  max-height: 180px;
+  overflow-y: auto;
   padding: 8px 10px 4px;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -1404,6 +1410,11 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Guarantees room for a few rolls even when the Scene Tags block above (capped at 180px, see
+     its own comment) and the header eat into the rest of the panel's own outer max-height — a
+     flex item won't shrink below its min-height until the container itself is smaller than that,
+     so this is a hard floor, not just a suggestion. ~3 entries at this widget's normal row size. */
+  min-height: 132px;
 }
 .roll-log-empty {
   color: var(--ink-soft);

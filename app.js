@@ -67,12 +67,15 @@ function rollLogCollapsedSize() {
 // 15% wider than the original 280/300 pair at the user's request.
 //
 // Height grows to fit every current Story Tag/Status (see rollLogSceneExtraHeight) instead of
-// capping that block and letting it scroll — the user explicitly wants every scene item visible
-// at once in this always-open widget, not hidden behind a scrollbar. .roll-log-panel's own CSS
+// always scrolling that block, up to ROLL_LOG_SCENE_MAX_HEIGHT — past that cap it scrolls
+// internally instead of continuing to grow, because unbounded growth was starving the roll
+// registry below it out of the panel entirely once a GM added enough Story Tags (the registry
+// list can shrink, the header/scene block can't, so ALL the deficit landed on the registry — see
+// .roll-log-list's own min-height in style.css for the other half of this fix, which guarantees
+// room for a few rolls no matter how tall the scene block gets). .roll-log-panel's own CSS
 // max-height (min(340px, real viewport minus clearance)) still applies underneath this as a hard
-// safety net for a screen too small to fit everything — see that rule's own comment — so this can
-// ask for more room than truly exists without breaking anything, it'll just scroll in that
-// extreme case instead of the usual "everything visible" outcome.
+// safety net for a screen too small to fit even the capped height.
+const ROLL_LOG_SCENE_MAX_HEIGHT = 180; // must match .roll-log-scene's max-height in style.css
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
@@ -80,7 +83,7 @@ function rollLogSceneExtraHeight() {
   const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
   const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
   const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
-  return SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING;
+  return Math.min(ROLL_LOG_SCENE_MAX_HEIGHT, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
 }
 function rollLogExpandedSize() {
   return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() + rollLogSceneExtraHeight() };
@@ -420,6 +423,20 @@ function setLang(newLang) {
   localStorage.setItem(LANG_KEY, newLang);
   renderApp();
 }
+
+// The roll-log corner popover (?view=rolllog, see background.html) is a genuinely separate page
+// in real Owlbear, not just a different render branch of this one — so toggling the language from
+// the main sheet's topbar only updates ITS OWN page via the renderApp() call in setLang() above;
+// the popover's `lang` was still whatever it loaded with. Same origin, though, so a localStorage
+// write in one window fires a "storage" event in every OTHER same-origin window/page — exactly
+// what's needed to keep the popover (and the expanded view, if that's open too) in sync live,
+// with no round trip through room metadata required.
+window.addEventListener("storage", (e) => {
+  if (e.key === LANG_KEY) {
+    lang = e.newValue === "it" ? "it" : "en";
+    renderApp();
+  }
+});
 
 // ---------- font size scaling (per-browser, everyone picks their own) ----------
 
@@ -1308,7 +1325,11 @@ function computeTotalPower(character) {
 }
 
 // Un-ticks every id belonging to this specific character (not the whole rollSelection Set, so a
-// GM mid-tally on a different Roster character isn't affected) and clears its modifier.
+// GM mid-tally on a different Roster character isn't affected) and clears its modifier. Also
+// un-ticks any currently-ticked Story Tags/Statuses (see renderActiveTagsSection's Scene Tags
+// block) — they don't "belong" to any one character the way personal tags do, but a player
+// pressing Reset expects it to clear everything selected for their upcoming roll, story items
+// included, not just their own sheet's tags.
 function resetTotalPower(character) {
   character.themes.forEach((theme) => {
     rollSelection.delete(theme.id);
@@ -1318,6 +1339,9 @@ function resetTotalPower(character) {
   character.tags.forEach((tag) => rollSelection.delete(tag.id));
   character.backpack.forEach((item) => rollSelection.delete(item.id));
   character.statuses.forEach((s) => rollSelection.delete(s.id));
+  const storyTags = getStoryTags();
+  storyTags.tags.forEach((tag) => rollSelection.delete(tag.id));
+  storyTags.statuses.forEach((s) => rollSelection.delete(s.id));
   rollModifiers.delete(character.id);
 }
 
@@ -3323,9 +3347,11 @@ function renderRollLogPanel() {
   // comment above — so this separate popover page couldn't tick into the same Set even if it
   // tried).
   //
-  // Every current item is shown in full, no scrolling — see rollLogSceneExtraHeight(), which grows
-  // this popover's requested height to fit all of them (called again from boot()'s
-  // OBR.room.onMetadataChange whenever the count changes while this panel is expanded).
+  // Grows to fit every current item up to ROLL_LOG_SCENE_MAX_HEIGHT (see rollLogSceneExtraHeight,
+  // called again from boot()'s OBR.room.onMetadataChange whenever the count changes while this
+  // panel is expanded) — past that cap the block itself scrolls (see its CSS) rather than the
+  // popover growing without limit, which was pushing the roll registry below it out of view
+  // entirely once a GM added enough Story Tags.
   const storyTags = getStoryTags();
   if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
     const campaign = getCampaign();
