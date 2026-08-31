@@ -212,38 +212,34 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .character-name-input::placeholder { color: var(--ink-soft); }
 .character-name-input:focus { outline: none; }
 
-.lang-toggle {
-  flex-shrink: 0;
-  background: rgba(242,230,201,0.1);
-  border: 1px solid rgba(242,230,201,0.35);
-  color: var(--parchment);
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-family: "Cinzel", Georgia, serif;
-  font-size: 0.7em;
-  letter-spacing: 0.04em;
-}
-.lang-toggle:hover { background: rgba(242,230,201,0.22); }
-
 .topbar-controls {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
+/* All five topbar controls (font-, font+, roll-log toggle, language, expand) share this one
+   class so they render as identically-sized boxes regardless of whether their content is an
+   icon or a short text label ("A-"/"A+"/"IT") — a fixed box-sizing:border-box footprint sized
+   to what the icon-only buttons (expand, dice toggle) need, with the text buttons centered
+   inside the same box rather than growing to fit their label. */
 .icon-btn {
   flex-shrink: 0;
+  box-sizing: border-box;
+  width: 28px;
+  height: 24px;
   background: rgba(242,230,201,0.1);
   border: 1px solid rgba(242,230,201,0.35);
   color: var(--parchment);
   border-radius: 6px;
-  padding: 3px 7px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: "Cinzel", Georgia, serif;
   font-weight: 700;
-  font-size: 0.72em;
+  font-size: 0.68em;
+  letter-spacing: 0.02em;
   line-height: 1;
 }
 .icon-btn:hover { background: rgba(242,230,201,0.22); }

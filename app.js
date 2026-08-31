@@ -1459,13 +1459,10 @@ function renderTopbar() {
       onclick: () => adjustFontScale(1),
     })
   );
-  const expandBtn = el("button", {
-    class: "icon-btn",
-    title: isModalView ? t("collapseViewTitle") : t("expandViewTitle"),
-    onclick: () => (isModalView ? closeExpandedView() : openExpandedView()),
-  });
-  expandBtn.appendChild(isModalView ? collapseIcon() : expandIcon());
-  controls.appendChild(expandBtn);
+  // Order left-to-right, per explicit request: font size down/up, roll-log viewer toggle,
+  // language, fullscreen/expand last (rightmost) — all rendered as identically-sized boxes via
+  // the shared .icon-btn sizing rule, .lang-toggle included, so the row reads as one consistent
+  // button group instead of a mix of pill and icon shapes.
   const rollLogToggleBtn = el("button", {
     class: "icon-btn",
     title: rollLogPanelHidden ? t("showRollLogPanelTitle") : t("hideRollLogPanelTitle"),
@@ -1476,12 +1473,19 @@ function renderTopbar() {
   controls.appendChild(rollLogToggleBtn);
   controls.appendChild(
     el("button", {
-      class: "lang-toggle",
+      class: "icon-btn",
       title: t("langToggleTitle"),
       text: lang === "en" ? "IT" : "EN",
       onclick: () => setLang(lang === "en" ? "it" : "en"),
     })
   );
+  const expandBtn = el("button", {
+    class: "icon-btn",
+    title: isModalView ? t("collapseViewTitle") : t("expandViewTitle"),
+    onclick: () => (isModalView ? closeExpandedView() : openExpandedView()),
+  });
+  expandBtn.appendChild(isModalView ? collapseIcon() : expandIcon());
+  controls.appendChild(expandBtn);
   nameRow.appendChild(controls);
   bar.appendChild(nameRow);
 
