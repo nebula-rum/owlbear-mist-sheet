@@ -1249,6 +1249,10 @@ body.roll-log-view {
      a bigger static number. */
   padding-bottom: 56px;
   padding-right: 28px;
+  /* Fallback for the same instant as the padding-bottom above, and for the same reason: app.js
+     overrides both together once the real screen-size-aware clearance is known. .roll-log-panel's
+     max-height (below) reads this back so its own size stays correct even before boot() resolves. */
+  --roll-log-bottom-clearance: 56px;
 }
 body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 
@@ -1309,7 +1313,21 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
      reliably renders at this size regardless of that chain. 322px = 280px + 15%, at the user's
      request for a wider roll-log panel. */
   width: 322px;
-  max-height: 340px;
+  /* 340px is the size this panel was designed for, but it's only ever a wish, not a guarantee —
+     it assumes Owlbear actually granted the popover box the exact height rollLogExpandedSize()
+     asked for (app.js), and in practice that box can come back shorter (a smaller game window, a
+     screen where 380px + the bottom clearance just doesn't fit). When that happened, the panel
+     still rendered at the full 340px and this page's own bottom/right-aligned flexbox (see
+     body.roll-log-view above) did what it's told: pinned the panel's BOTTOM edge in place and let
+     the excess spill past whichever edge of the popover's actual box was tightest — visible as the
+     panel's own top or bottom edge, rounded corners included, being sliced off by the real iframe
+     boundary rather than the list scrolling internally the way it's supposed to. Capping at
+     whichever is smaller — the designed 340px, or 100% of the real viewport this page actually
+     got minus the same bottom clearance body already reserves and a small top margin — means the
+     panel can never ask for more room than truly exists; a shorter box just shows fewer rows
+     before .roll-log-list's own scrollbar (below) kicks in, instead of the panel's outer shape
+     (and its bounding box) getting clipped by Owlbear's real window. */
+  max-height: min(340px, calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
   display: flex;
   flex-direction: column;
   background: var(--parchment);

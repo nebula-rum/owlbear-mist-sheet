@@ -2989,7 +2989,13 @@ async function boot() {
       // sensible fallback for the brief instant before this resolves) now that the real,
       // screen-size-aware clearance is known. padding-right is untouched — only the bottom gap
       // scales with screen height; see the comment on ROLL_LOG_EXTRA_LIFT_FRACTION above.
-      document.body.style.paddingBottom = rollLogBottomClearance() + "px";
+      const clearance = rollLogBottomClearance() + "px";
+      document.body.style.paddingBottom = clearance;
+      // Also published as a custom property so .roll-log-panel's max-height (style.css) can stay
+      // in lockstep with this same number — see the comment there for why the panel needs to know
+      // it at all, instead of just trusting the popover box is exactly the size we asked Owlbear
+      // for via rollLogExpandedSize()/setWidth/setHeight.
+      document.body.style.setProperty("--roll-log-bottom-clearance", clearance);
     }
 
     OBR.player.onChange(async () => {
