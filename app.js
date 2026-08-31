@@ -58,6 +58,10 @@ const ROLL_LOG_EXPANDED_SIZE = {
   height: 380 + ROLL_LOG_BOTTOM_CLEARANCE,
 };
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
+// Set on the URL only by openRollLogPopover()'s deliberate "activate" action below — background.html's
+// own ambient auto-open (on room join) omits this, so a fresh connection still starts as the small
+// collapsed pill, not the full log, which stays the unobtrusive default.
+const rollLogOpensExpanded = new URLSearchParams(window.location.search).get("open") === "expanded";
 if (isRollLogView) {
   // This page is just the floating dice pill/panel, not the parchment character sheet — strip
   // the sheet's page background/padding so only the widget itself shows over the game table.
@@ -424,13 +428,16 @@ function openRollLogPopover() {
   if (backend !== "obr") return;
   // Absolute URL for the same reason as openExpandedView()/background.html: Owlbear resolves a
   // relative "url" by concatenating its own origin with no separator, which breaks on a site
-  // hosted below the domain root (e.g. a GitHub Pages project repo).
-  const url = window.location.origin + window.location.pathname + "?view=rolllog";
+  // hosted below the domain root (e.g. a GitHub Pages project repo). "open=expanded" tells the
+  // freshly-loaded roll-log page to start already showing the log itself, not just the small
+  // pill — the player explicitly asked to see it by clicking this button, so it should open
+  // straight to the useful view instead of requiring a second click on the pill to expand it.
+  const url = window.location.origin + window.location.pathname + "?view=rolllog&open=expanded";
   OBR.popover.open({
     id: ROLL_LOG_POPOVER_ID,
     url,
-    width: ROLL_LOG_COLLAPSED_SIZE.width,
-    height: ROLL_LOG_COLLAPSED_SIZE.height,
+    width: ROLL_LOG_EXPANDED_SIZE.width,
+    height: ROLL_LOG_EXPANDED_SIZE.height,
     anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     disableClickAway: true,
@@ -447,8 +454,17 @@ function closeRollLogPopover() {
 function setRollLogPanelHidden(hidden) {
   rollLogPanelHidden = hidden;
   localStorage.setItem(ROLL_LOG_PANEL_HIDDEN_KEY, hidden ? "1" : "0");
-  if (hidden) closeRollLogPopover();
-  else openRollLogPopover();
+  if (hidden) {
+    closeRollLogPopover();
+  } else {
+    openRollLogPopover();
+    // Standalone's embedded overlay is rendered by this same script instance (unlike the real
+    // popover, which loads ?view=rolllog&open=expanded fresh — see openRollLogPopover) — so there's
+    // no URL to pass the "start expanded" request through. Setting the shared flag directly here
+    // gets the same "activating this shows the log itself, not just the pill" result in local
+    // preview too.
+    rollLogExpanded = true;
+  }
   renderApp();
 }
 
@@ -2748,7 +2764,11 @@ function renderSettingsTab() {
 // standalone/local-preview mode there's no OBR.popover to anchor to, so the exact same panel is
 // instead embedded directly into the main page as a `position: fixed` overlay (see renderApp()).
 
-let rollLogExpanded = false; // per-page UI state only — not synced, resets on reload/reconnect
+// Per-page UI state only — not synced, resets on reload/reconnect. Starts pre-expanded when this
+// page was opened via the topbar's "activate" button (rollLogOpensExpanded, from the URL — see
+// openRollLogPopover); background.html's own ambient auto-open on room join omits that flag, so a
+// fresh connection still starts as the small unobtrusive pill.
+let rollLogExpanded = isRollLogView && rollLogOpensExpanded;
 
 function setRollLogPopoverSize(expanded) {
   if (backend !== "obr") return; // standalone's embedded overlay just resizes itself via CSS
