@@ -1261,6 +1261,18 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   pointer-events: auto;
 }
 
+/* showConfirmDialog() appends its overlay straight to <body> (see app.js) — a sibling of
+   .roll-log-widget, not a descendant of it. On the ?view=rolllog page that meant it inherited
+   the pointer-events:none set on body above instead of the :auto re-enabled on .roll-log-widget,
+   so the dialog rendered but nothing in it (Cancel/Delete included) could be clicked — this is
+   what broke the roll log's Clear-history confirmation specifically, since Clear is the only
+   destructive action reachable from that page. A confirm dialog is always meant to be the one
+   thing you CAN interact with regardless of what page it's shown over, so it gets its own
+   unconditional pointer-events:auto rather than relying on being nested inside the widget. */
+.confirm-overlay {
+  pointer-events: auto;
+}
+
 /* Standalone/local-preview mode has no such popover — the widget shares the page with the whole
    character sheet instead, so it needs its own fixed-position corner anchor (with a little
    breathing room) rather than the roll-log-view page's edge-to-edge flex alignment above. The

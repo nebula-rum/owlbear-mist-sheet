@@ -1,12 +1,12 @@
 {
-  "name": "Mist Engine Character Sheet",
+  "name": "Mist Engine — Hero Sheet",
   "version": "1.0.0",
   "manifest_version": 1,
   "description": "A Theme-card character sheet for Mist Engine games, with GM roster tools and shared dice rolls.",
   "icon": "/owlbear-mist-sheet/icon.svg",
   "author": "nebularum",
   "action": {
-    "title": "Hero Sheet (Mist Engine)",
+    "title": "Character Sheet",
     "icon": "/owlbear-mist-sheet/icon.svg",
     "popover": "/owlbear-mist-sheet/index.html",
     "height": 820,

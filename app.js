@@ -455,6 +455,19 @@ function openRollLogPopover() {
     hidePaper: true,
     marginThreshold: 0,
   });
+  // This id is very often already open at this point — background.html auto-opens it (collapsed)
+  // for every connected player the moment they join, and this "activate" action only runs when a
+  // player re-shows a widget they'd previously hidden, at which point it's genuinely closed, but
+  // also whenever they just want the collapsed pill to jump straight to the full log. The
+  // width/height passed to open() above is this codebase's only sizing call that's never actually
+  // been verified against a real, already-open popover (every other resize — collapse/expand via
+  // the pill, the map-toggle clearance passes — goes through setWidth/setHeight, and THAT path has
+  // repeatedly been confirmed to correctly resize AND reposition an existing popover). Re-issuing
+  // the exact same size through that proven mechanism right after open() is a no-op if open()
+  // already got it right, and a real fix if it didn't — cheap insurance against exactly the
+  // "top of the panel is clipped" failure mode reported after using this button.
+  OBR.popover.setWidth(ROLL_LOG_POPOVER_ID, size.width);
+  OBR.popover.setHeight(ROLL_LOG_POPOVER_ID, size.height);
 }
 
 function closeRollLogPopover() {
@@ -1314,7 +1327,17 @@ function rollDice(character) {
 function clearRollLog() {
   roomMeta[ROOM_KEYS.rollLog] = [];
   scheduleRoomSave(ROOM_KEYS.rollLog);
-  if (backend === "standalone") refreshRollLogWidget();
+  // Every other destructive action in this app (deleting a Theme/tag/Backpack item/Roster
+  // character) refreshes its own view immediately after mutating + scheduling the save, instead
+  // of waiting on the round trip through OBR.room.onMetadataChange to do it — and for good reason:
+  // once that echo lands it describes a value that already matches what this page applied
+  // locally, so the "skip no-op echoes" guard in boot() (see the comment there, deepEqual(meta,
+  // roomMeta)) correctly treats it as nothing new and never re-renders. Only refreshing here for
+  // the standalone backend left a real player's own view of the roll log frozen on the old
+  // entries after clicking Clear on the real obr backend — the data was actually cleared, it just
+  // never visibly updated for the person who cleared it. Refresh unconditionally, matching every
+  // other delete in the app.
+  refreshRollLogWidget();
 }
 
 // ---------- roster (GM-managed index of characters) ----------
