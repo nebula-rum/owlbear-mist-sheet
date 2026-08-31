@@ -3,6 +3,7 @@ import OBR from "./obr-sdk.bundle.js";
 const LANG_KEY = "mist-hero-sheet-lang";
 const FONT_SCALE_KEY = "mist-hero-sheet-font-scale";
 const ROLL_SOUND_MUTE_KEY = "mist-hero-sheet-roll-sound-muted";
+const ROLL_LOG_PANEL_HIDDEN_KEY = "mist-hero-sheet-roll-log-hidden";
 const COLOR_KEYS = ["amber", "teal", "violet", "rose", "sage"];
 
 // Room metadata keys — everything lives in shared OBR room metadata now (not per-player
@@ -81,6 +82,8 @@ const LABELS = {
     fontIncreaseTitle: "Increase text size",
     expandViewTitle: "Open larger view",
     collapseViewTitle: "Close larger view",
+    hideRollLogPanelTitle: "Hide roll log widget",
+    showRollLogPanelTitle: "Show roll log widget",
     confirmCancel: "Cancel",
     confirmDelete: "Delete",
 
@@ -215,6 +218,8 @@ const LABELS = {
     fontIncreaseTitle: "Aumenta dimensione testo",
     expandViewTitle: "Apri vista grande",
     collapseViewTitle: "Chiudi vista grande",
+    hideRollLogPanelTitle: "Nascondi il widget dei tiri",
+    showRollLogPanelTitle: "Mostra il widget dei tiri",
     confirmCancel: "Annulla",
     confirmDelete: "Elimina",
 
@@ -399,6 +404,63 @@ window.addEventListener("storage", (e) => {
   // happens to be showing one (the dedicated roll-log view, or standalone's embedded overlay).
   if (isRollLogView) renderApp();
   else if (backend === "standalone") refreshRollLogWidget();
+});
+
+// ---------- roll log widget visibility (per-browser, everyone picks their own) ----------
+// background.html opens the corner widget automatically for every connected player, docked just
+// above Owlbear's own scene/map toggle — but that spot isn't free real estate for everyone (some
+// tables run other HUD extensions there too), so this is a personal show/hide switch, toggled
+// from the main sheet's topbar (see renderTopbar()), independent of the GM and of what anyone
+// else at the table sees. Real Owlbear lets any page belonging to this extension open or close a
+// popover it already knows the id of — not just the page that originally opened it (the roll-log
+// panel itself already proves this, resizing the same popover via setWidth/setHeight from ITS OWN
+// page in setRollLogPopoverSize below) — so the topbar button can call OBR.popover.open()/close()
+// directly, with no need to route the request through background.html. background.html only
+// needs to check this same flag once, before its own initial open() call, so a player who hid the
+// widget doesn't have it silently reappear on their next reconnect.
+let rollLogPanelHidden = localStorage.getItem(ROLL_LOG_PANEL_HIDDEN_KEY) === "1";
+
+function openRollLogPopover() {
+  if (backend !== "obr") return;
+  // Absolute URL for the same reason as openExpandedView()/background.html: Owlbear resolves a
+  // relative "url" by concatenating its own origin with no separator, which breaks on a site
+  // hosted below the domain root (e.g. a GitHub Pages project repo).
+  const url = window.location.origin + window.location.pathname + "?view=rolllog";
+  OBR.popover.open({
+    id: ROLL_LOG_POPOVER_ID,
+    url,
+    width: ROLL_LOG_COLLAPSED_SIZE.width,
+    height: ROLL_LOG_COLLAPSED_SIZE.height,
+    anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
+    transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
+    disableClickAway: true,
+    hidePaper: true,
+    marginThreshold: 0,
+  });
+}
+
+function closeRollLogPopover() {
+  if (backend !== "obr") return;
+  OBR.popover.close(ROLL_LOG_POPOVER_ID);
+}
+
+function setRollLogPanelHidden(hidden) {
+  rollLogPanelHidden = hidden;
+  localStorage.setItem(ROLL_LOG_PANEL_HIDDEN_KEY, hidden ? "1" : "0");
+  if (hidden) closeRollLogPopover();
+  else openRollLogPopover();
+  renderApp();
+}
+
+// Keeps a second open main-sheet tab's topbar button (and standalone's embedded overlay) in sync
+// if the preference changes elsewhere — mirrors the sound-mute listener above. background.html
+// doesn't load this script at all (see its own comment on why), so it can't hear this event; it
+// only ever reads the flag once, at its own boot, which is enough since the click that changes it
+// already opens/closes the real popover directly, above.
+window.addEventListener("storage", (e) => {
+  if (e.key !== ROLL_LOG_PANEL_HIDDEN_KEY) return;
+  rollLogPanelHidden = e.newValue === "1";
+  if (!isRollLogView) renderApp();
 });
 
 let diceAudioCtx = null;
@@ -610,6 +672,23 @@ function diceIcon(size) {
       ["circle", { cx: "12", cy: "12", r: "1.5", fill: "currentColor", stroke: "none" }],
       ["circle", { cx: "8", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
       ["circle", { cx: "16", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
+    ],
+    { size: size || 15, strokeWidth: 2 }
+  );
+}
+
+// Same dice glyph plus a diagonal slash — the topbar's personal show/hide toggle for the corner
+// roll-log widget (see rollLogPanelHidden), shown when the widget is currently hidden.
+function diceOffIcon(size) {
+  return svgIcon(
+    [
+      ["rect", { x: "3", y: "3", width: "18", height: "18", rx: "4" }],
+      ["circle", { cx: "8", cy: "8", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "16", cy: "8", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "12", cy: "12", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "8", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["circle", { cx: "16", cy: "16", r: "1.5", fill: "currentColor", stroke: "none" }],
+      ["line", { x1: "2", y1: "2", x2: "22", y2: "22" }],
     ],
     { size: size || 15, strokeWidth: 2 }
   );
@@ -1308,8 +1387,8 @@ function renderApp() {
   // Real Owlbear gets the shared roll log via its own always-on background-popover page instead
   // (see background.html) — but that mechanism doesn't exist outside a real room, so standalone/
   // local-preview mode embeds the identical panel here as a fixed corner overlay so the feature
-  // stays testable without Owlbear.
-  if (backend === "standalone") {
+  // stays testable without Owlbear. Respects the same personal hide toggle as the real popover.
+  if (backend === "standalone" && !rollLogPanelHidden) {
     app.appendChild(renderRollLogPanel());
   }
 }
@@ -1360,6 +1439,14 @@ function renderTopbar() {
   });
   expandBtn.appendChild(isModalView ? collapseIcon() : expandIcon());
   controls.appendChild(expandBtn);
+  const rollLogToggleBtn = el("button", {
+    class: "icon-btn",
+    title: rollLogPanelHidden ? t("showRollLogPanelTitle") : t("hideRollLogPanelTitle"),
+    "aria-label": rollLogPanelHidden ? t("showRollLogPanelTitle") : t("hideRollLogPanelTitle"),
+    onclick: () => setRollLogPanelHidden(!rollLogPanelHidden),
+  });
+  rollLogToggleBtn.appendChild(rollLogPanelHidden ? diceOffIcon(14) : diceIcon(14));
+  controls.appendChild(rollLogToggleBtn);
   controls.appendChild(
     el("button", {
       class: "lang-toggle",
