@@ -1224,6 +1224,16 @@ body.roll-log-view {
   background: transparent !important;
   height: 100%;
   min-height: 0;
+  /* Owlbear gives this page's popover a real DOM rectangle sitting on top of the game table —
+     everywhere inside it, including the transparent padding around the pill/panel (below), swallows
+     mouse clicks by default whether or not anything is drawn there. That invisible padding
+     deliberately overlaps Owlbear's own bottom-right map-toggle button (see the clearance comment
+     below) so the click was landing on OUR page instead of reaching that button underneath —
+     "not properly selectable" from the player's side. pointer-events:none here turns the whole
+     page click-through by default; only the actual visible widget (.roll-log-widget, re-enabled
+     below) opts back in, so clicks in the empty margin fall through to whatever Owlbear has
+     underneath instead of being captured here. */
+  pointer-events: none;
 }
 body.roll-log-view {
   display: flex;
@@ -1245,6 +1255,15 @@ body.roll-log-view {
   padding-right: 28px;
 }
 body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
+
+/* Re-enables real clicks on the widget itself — everything around it stayed click-through via
+   the pointer-events:none above. Applies in both places .roll-log-widget renders: the real-OBR
+   ?view=rolllog page (where this actually matters, for the map-toggle-button bug above) and
+   standalone's .floating overlay below (harmless there either way, since nothing disables
+   pointer-events on the main sheet page it sits on top of). */
+.roll-log-widget {
+  pointer-events: auto;
+}
 
 /* Standalone/local-preview mode has no such popover — the widget shares the page with the whole
    character sheet instead, so it needs its own fixed-position corner anchor (with a little
