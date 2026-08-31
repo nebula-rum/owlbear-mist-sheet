@@ -11,6 +11,7 @@
   open the roll-log corner panel (index.html?view=rolllog) as a small popover anchored to the
   bottom-right corner of the screen, so every player sees a persistent, shared dice-roll widget
   without having to click anything.
+
   Mechanism confirmed against the official Owlbear "Dice" extension's own source (background.ts +
   PopoverTrays.tsx): a background page calling OBR.popover.open() with hidePaper/disableClickAway
   is exactly how that extension shows its own always-on corner preview, and the same popover id
@@ -20,18 +21,28 @@
 -->
 <script type="module">
 import OBR from "./obr-sdk.bundle.js";
-// Must match ROLL_LOG_POPOVER_ID / ROLL_LOG_COLLAPSED_SIZE in app.js — kept as literals here
+
+// Must match ROLL_LOG_POPOVER_ID / rollLogCollapsedSize() in app.js — kept as literals here
 // (rather than imported) because this page never loads the rest of app.js, which assumes an
 // #app element and a full character-sheet DOM that this tiny background page doesn't have.
 const ROLL_LOG_POPOVER_ID = "com.mistengine.hero-sheet/roll-log-popover";
-// Must match ROLL_LOG_COLLAPSED_SIZE in app.js: 40x40 visible pill (see the "less big, match
-// Owlbear's own round buttons" pass) plus ROLL_LOG_RIGHT_CLEARANCE (28px) / ROLL_LOG_BOTTOM_
-// CLEARANCE (56px) of extra box width/height — see the comment on those constants in app.js for
-// why the clearance lives in the box size and body.roll-log-view's own CSS padding, rather than
-// here as a popover-level margin (a uniform OBR.popover.open() marginThreshold, tried first,
-// moves both edges together and can't be tuned per axis).
-const COLLAPSED_WIDTH = 40 + 28;
-const COLLAPSED_HEIGHT = 40 + 56;
+// Must match app.js: 40x40 visible pill (see the "less big, match Owlbear's own round buttons"
+// pass) plus ROLL_LOG_RIGHT_CLEARANCE (28px) / ROLL_LOG_BASE_BOTTOM_CLEARANCE (56px) of extra box
+// width/height — see the comment on those constants in app.js for why the clearance lives in the
+// box size and body.roll-log-view's own CSS padding, rather than here as a popover-level margin
+// (a uniform OBR.popover.open() marginThreshold, tried first, moves both edges together and
+// can't be tuned per axis).
+const RIGHT_CLEARANCE = 28;
+const BASE_BOTTOM_CLEARANCE = 56;
+// Must match ROLL_LOG_EXTRA_LIFT_FRACTION in app.js — an extra lift on top of the base bottom
+// clearance, sized as a fraction of the real game-window height (rather than another hardcoded
+// px number) since the base clearance alone still grazed Owlbear's own map-toggle button on some
+// screens. Computed fresh below, once OBR is ready, using the same OBR.viewport.getHeight() call
+// app.js's own computeRollLogExtraLift() uses — this page can't import that function (see above),
+// so the formula is duplicated, not the fetched value.
+const EXTRA_LIFT_FRACTION = 0.05;
+const COLLAPSED_WIDTH = 40 + RIGHT_CLEARANCE;
+
 // Must match ROLL_LOG_PANEL_HIDDEN_KEY in app.js. The topbar's show/hide toggle (see
 // setRollLogPanelHidden in app.js) opens/closes the live popover itself directly — it doesn't
 // need this page's help for that, since any page belonging to this extension can control a
@@ -40,18 +51,29 @@ const COLLAPSED_HEIGHT = 40 + 56;
 // to respect that same preference on ITS OWN boot, once per connected player, so a player who hid
 // the widget doesn't have it silently reappear the next time they reconnect.
 const ROLL_LOG_PANEL_HIDDEN_KEY = "mist-hero-sheet-roll-log-hidden";
-OBR.onReady(() => {
+
+OBR.onReady(async () => {
   if (localStorage.getItem(ROLL_LOG_PANEL_HIDDEN_KEY) === "1") return;
+
   // Build an already-absolute URL ourselves: Owlbear's SDK resolves a relative "url" by
   // concatenating its own origin with the string with NO separator inserted, which breaks on any
   // site not hosted at the domain root (e.g. a GitHub Pages project repo). Passing a full
   // "https://…" URL sidesteps that entirely — same fix as openExpandedView() in app.js.
   const url = window.location.origin + window.location.pathname.replace(/background\.html$/, "index.html") + "?view=rolllog";
+
+  let extraLift = 0;
+  try {
+    const h = await OBR.viewport.getHeight();
+    extraLift = Math.round(h * EXTRA_LIFT_FRACTION);
+  } catch (e) {
+    // Fall back to just the base clearance below — better than not opening the widget at all.
+  }
+
   OBR.popover.open({
     id: ROLL_LOG_POPOVER_ID,
     url,
     width: COLLAPSED_WIDTH,
-    height: COLLAPSED_HEIGHT,
+    height: 40 + BASE_BOTTOM_CLEARANCE + extraLift,
     anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     disableClickAway: true,

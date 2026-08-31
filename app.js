@@ -45,18 +45,28 @@ const ROLL_LOG_MAX_ENTRIES = 50;
 // created inside the widget's own page (see body.roll-log-view's padding in style.css, which must
 // match these numbers) rather than via the popover API's own margin option, so each axis can be
 // tuned independently instead of moving together.
-const ROLL_LOG_BOTTOM_CLEARANCE = 56;
+const ROLL_LOG_BASE_BOTTOM_CLEARANCE = 56;
 const ROLL_LOG_RIGHT_CLEARANCE = 28;
-const ROLL_LOG_COLLAPSED_SIZE = {
-  width: 40 + ROLL_LOG_RIGHT_CLEARANCE,
-  height: 40 + ROLL_LOG_BOTTOM_CLEARANCE,
-};
+// Even that tuned 56px still grazed Owlbear's own map-toggle button on some screens — a fixed
+// pixel count can't scale with how tall the actual game window is. rollLogExtraLift adds a
+// further lift on top of the base clearance, computed once at boot (see computeRollLogExtraLift,
+// near boot()) as a fraction of the real game-window height (OBR.viewport.getHeight()) rather
+// than another hardcoded number, so the gap holds up across very different screen sizes. Starts
+// at 0 (i.e. just the base clearance) until boot() resolves the real value, so the widget still
+// has a sensible size for the brief instant before that async call returns.
+const ROLL_LOG_EXTRA_LIFT_FRACTION = 0.05;
+let rollLogExtraLift = 0;
+function rollLogBottomClearance() {
+  return ROLL_LOG_BASE_BOTTOM_CLEARANCE + rollLogExtraLift;
+}
+function rollLogCollapsedSize() {
+  return { width: 40 + ROLL_LOG_RIGHT_CLEARANCE, height: 40 + rollLogBottomClearance() };
+}
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
-const ROLL_LOG_EXPANDED_SIZE = {
-  width: 342 + ROLL_LOG_RIGHT_CLEARANCE,
-  height: 380 + ROLL_LOG_BOTTOM_CLEARANCE,
-};
+function rollLogExpandedSize() {
+  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() };
+}
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 // Set on the URL only by openRollLogPopover()'s deliberate "activate" action below — background.html's
 // own ambient auto-open (on room join) omits this, so a fresh connection still starts as the small
@@ -433,11 +443,12 @@ function openRollLogPopover() {
   // pill — the player explicitly asked to see it by clicking this button, so it should open
   // straight to the useful view instead of requiring a second click on the pill to expand it.
   const url = window.location.origin + window.location.pathname + "?view=rolllog&open=expanded";
+  const size = rollLogExpandedSize();
   OBR.popover.open({
     id: ROLL_LOG_POPOVER_ID,
     url,
-    width: ROLL_LOG_EXPANDED_SIZE.width,
-    height: ROLL_LOG_EXPANDED_SIZE.height,
+    width: size.width,
+    height: size.height,
     anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
     disableClickAway: true,
@@ -2772,7 +2783,7 @@ let rollLogExpanded = isRollLogView && rollLogOpensExpanded;
 
 function setRollLogPopoverSize(expanded) {
   if (backend !== "obr") return; // standalone's embedded overlay just resizes itself via CSS
-  const size = expanded ? ROLL_LOG_EXPANDED_SIZE : ROLL_LOG_COLLAPSED_SIZE;
+  const size = expanded ? rollLogExpandedSize() : rollLogCollapsedSize();
   OBR.popover.setWidth(ROLL_LOG_POPOVER_ID, size.width);
   OBR.popover.setHeight(ROLL_LOG_POPOVER_ID, size.height);
 }
@@ -2922,6 +2933,19 @@ function renderRollLogPanel() {
   return widget;
 }
 
+// Reads the actual game-window height and turns it into extra pixels of clearance for the
+// roll-log widget — see the comment on ROLL_LOG_EXTRA_LIFT_FRACTION above. Wrapped in a try/catch
+// since OBR.viewport.getHeight() is a real round trip to the host page; better to fall back to
+// "just the base clearance" than let a rejected promise stop boot() from finishing.
+async function computeRollLogExtraLift() {
+  try {
+    const h = await OBR.viewport.getHeight();
+    return Math.round(h * ROLL_LOG_EXTRA_LIFT_FRACTION);
+  } catch (e) {
+    return 0;
+  }
+}
+
 // ---------- boot ----------
 
 async function boot() {
@@ -2931,6 +2955,15 @@ async function boot() {
     selfId = OBR.player.id;
     selfName = await OBR.player.getName();
     selfRole = await OBR.player.getRole();
+
+    rollLogExtraLift = await computeRollLogExtraLift();
+    if (isRollLogView) {
+      // Overrides body.roll-log-view's static padding-bottom in style.css (which stays as the
+      // sensible fallback for the brief instant before this resolves) now that the real,
+      // screen-size-aware clearance is known. padding-right is untouched — only the bottom gap
+      // scales with screen height; see the comment on ROLL_LOG_EXTRA_LIFT_FRACTION above.
+      document.body.style.paddingBottom = rollLogBottomClearance() + "px";
+    }
 
     OBR.player.onChange(async () => {
       selfName = await OBR.player.getName();

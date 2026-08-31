@@ -1230,13 +1230,17 @@ body.roll-log-view {
   justify-content: flex-end;
   align-items: flex-end;
   /* Breathing room above (and a little in from) Owlbear's own native scene/map-toggle button,
-     which sits right at the true bottom-right corner. Must match ROLL_LOG_BOTTOM_CLEARANCE /
+     which sits right at the true bottom-right corner. Must match ROLL_LOG_BASE_BOTTOM_CLEARANCE /
      ROLL_LOG_RIGHT_CLEARANCE in app.js — the popover box is made exactly that much bigger than
      the visible widget so this padding has somewhere to go without pushing the widget off the box
      entirely. Flush-right (0 padding, tried first) read as "way too far right"; a uniform
      marginThreshold via the popover API (tried before that) pushed both edges in by the same
      amount and read as "a little off" — so the right gap is deliberately half the bottom one,
-     tuned independently on each axis instead of moving together. */
+     tuned independently on each axis instead of moving together. This padding-bottom value is
+     just the fallback for the brief instant before boot() knows better — app.js overrides it
+     inline once it's read the real game-window height and added the extra screen-size-aware lift
+     on top (see ROLL_LOG_EXTRA_LIFT_FRACTION in app.js), which is why it can't just live here as
+     a bigger static number. */
   padding-bottom: 56px;
   padding-right: 28px;
 }
@@ -1244,11 +1248,15 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 
 /* Standalone/local-preview mode has no such popover — the widget shares the page with the whole
    character sheet instead, so it needs its own fixed-position corner anchor (with a little
-   breathing room) rather than the roll-log-view page's edge-to-edge flex alignment above. */
+   breathing room) rather than the roll-log-view page's edge-to-edge flex alignment above. The
+   extra "+ 5vh" lifts it clear of where a real Owlbear map-toggle button would sit, same idea and
+   same 5% fraction as ROLL_LOG_EXTRA_LIFT_FRACTION in app.js — expressed directly in CSS here
+   since standalone mode already has the real browser viewport height for free via vh units,
+   with no OBR.viewport.getHeight() round trip needed. */
 .roll-log-widget.floating {
   position: fixed;
   right: 14px;
-  bottom: 14px;
+  bottom: calc(14px + 5vh);
   z-index: 500;
 }
 
