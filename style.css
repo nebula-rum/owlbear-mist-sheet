@@ -1324,21 +1324,27 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
      reliably renders at this size regardless of that chain. 322px = 280px + 15%, at the user's
      request for a wider roll-log panel. */
   width: 322px;
-  /* 340px is the size this panel was designed for, but it's only ever a wish, not a guarantee —
-     it assumes Owlbear actually granted the popover box the exact height rollLogExpandedSize()
-     asked for (app.js), and in practice that box can come back shorter (a smaller game window, a
-     screen where 380px + the bottom clearance just doesn't fit). When that happened, the panel
-     still rendered at the full 340px and this page's own bottom/right-aligned flexbox (see
-     body.roll-log-view above) did what it's told: pinned the panel's BOTTOM edge in place and let
-     the excess spill past whichever edge of the popover's actual box was tightest — visible as the
+  /* --roll-log-panel-target-height (set by updateRollLogSizeVars() in app.js, every render) is
+     exactly what rollLogExpandedSize() is currently asking Owlbear's OBR.popover.setHeight for —
+     used here instead of a hardcoded design height so this rule can never fall out of sync with
+     that number the way a literal 340px did the moment Story Tags started growing the panel (see
+     rollLogPanelTargetHeight()'s own comment in app.js for the bug that caused: the popover box
+     kept growing to fit them, but this rule still capped the visible panel at a flat 340px,
+     clipping the roll registry below it off the bottom).
+     Still only ever a wish, not a guarantee — it assumes Owlbear actually granted the popover box
+     that exact height, and in practice that box can come back shorter (a smaller game window, a
+     screen where the requested height just doesn't fit). When that happens, the panel still
+     renders at its full target height and this page's own bottom/right-aligned flexbox (see
+     body.roll-log-view above) does what it's told: pins the panel's BOTTOM edge in place and lets
+     the excess spill past whichever edge of the popover's actual box is tightest — visible as the
      panel's own top or bottom edge, rounded corners included, being sliced off by the real iframe
      boundary rather than the list scrolling internally the way it's supposed to. Capping at
-     whichever is smaller — the designed 340px, or 100% of the real viewport this page actually
-     got minus the same bottom clearance body already reserves and a small top margin — means the
+     whichever is smaller — the target height, or 100% of the real viewport this page actually got
+     minus the same bottom clearance body already reserves and a small top margin — means the
      panel can never ask for more room than truly exists; a shorter box just shows fewer rows
      before .roll-log-list's own scrollbar (below) kicks in, instead of the panel's outer shape
      (and its bounding box) getting clipped by Owlbear's real window. */
-  max-height: min(340px, calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
+  max-height: min(var(--roll-log-panel-target-height, 340px), calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
   display: flex;
   flex-direction: column;
   background: var(--parchment);
@@ -1374,16 +1380,17 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 /* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
    renderRollLogPanel). Grows the popover itself to show every current item at once (see
    rollLogSceneExtraHeight() in app.js, re-asked for live via OBR.room.onMetadataChange whenever
-   the count changes) up to this same max-height — past that it scrolls internally instead of
-   keeping the popover growing without limit, which was the earlier behavior and had a real
-   problem: enough Story Tags pushed the roll registry below completely out of the panel (this
-   block wasn't allowed to shrink, so ALL the deficit landed on .roll-log-list once the panel hit
-   its own outer max-height cap). Capping here, plus .roll-log-list's own min-height below,
-   guarantees the roll registry always keeps room for a few rows no matter how many Story Tags
-   exist. Keep ROLL_LOG_SCENE_MAX_HEIGHT (app.js) equal to this max-height. */
+   the count changes) up to --roll-log-scene-max-height (half the real game-window width, computed
+   once at boot and published by updateRollLogSizeVars() — see rollLogSceneMaxHeight in app.js).
+   That cap covers the common case (Owlbear actually granted the taller popover box this asked
+   for), but a short real screen can still leave less room than both this block AND the roll
+   registry below want at once — flex-shrink stays at its default (1, i.e. NOT 0) specifically so
+   THIS block gives way first when that happens: it has no min-height of its own, while
+   .roll-log-list below has a hard one (see its own comment), so squeezing always lands here,
+   scrolling internally, rather than pushing the registry below the panel's visible bottom edge
+   entirely — which is exactly what going with flex-shrink:0 here used to do. */
 .roll-log-scene {
-  flex-shrink: 0;
-  max-height: 180px;
+  max-height: var(--roll-log-scene-max-height, 180px);
   overflow-y: auto;
   padding: 8px 10px 4px;
   border-bottom: 1px solid var(--border-soft);

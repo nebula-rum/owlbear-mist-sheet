@@ -66,16 +66,17 @@ function rollLogCollapsedSize() {
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
 //
-// Height grows to fit every current Story Tag/Status (see rollLogSceneExtraHeight) instead of
-// always scrolling that block, up to ROLL_LOG_SCENE_MAX_HEIGHT — past that cap it scrolls
-// internally instead of continuing to grow, because unbounded growth was starving the roll
-// registry below it out of the panel entirely once a GM added enough Story Tags (the registry
-// list can shrink, the header/scene block can't, so ALL the deficit landed on the registry — see
-// .roll-log-list's own min-height in style.css for the other half of this fix, which guarantees
-// room for a few rolls no matter how tall the scene block gets). .roll-log-panel's own CSS
-// max-height (min(340px, real viewport minus clearance)) still applies underneath this as a hard
-// safety net for a screen too small to fit even the capped height.
-const ROLL_LOG_SCENE_MAX_HEIGHT = 180; // must match .roll-log-scene's max-height in style.css
+// Scene Tags block height grows to fit every current Story Tag/Status (see
+// rollLogSceneExtraHeight) instead of always scrolling that block, up to rollLogSceneMaxHeight —
+// half the real game-window WIDTH per explicit request (computed once at boot, see
+// computeRollLogSceneMaxHeight near boot() — mirrors how rollLogExtraLift above is computed from
+// the window HEIGHT), not a flat pixel count. Past that cap it scrolls internally instead of
+// continuing to grow, because unbounded growth was starving the roll registry below it out of the
+// panel entirely once a GM added enough Story Tags (the registry list can shrink, the header/scene
+// block can't, so ALL the deficit landed on the registry — see .roll-log-list's own min-height in
+// style.css for the other half of this fix, which guarantees room for a few rolls no matter how
+// tall the scene block gets).
+let rollLogSceneMaxHeight = 180; // sensible default for the instant before boot() resolves the real width
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
@@ -83,10 +84,21 @@ function rollLogSceneExtraHeight() {
   const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
   const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
   const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
-  return Math.min(ROLL_LOG_SCENE_MAX_HEIGHT, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
+  return Math.min(rollLogSceneMaxHeight, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
+}
+// The panel's own target height, NOT counting rollLogBottomClearance() (that's separate page
+// padding below the panel, not part of its box) — exposed live as a CSS custom property (see
+// updateRollLogSizeVars(), called from renderRollLogPanel()) so .roll-log-panel's own safety-net
+// max-height in style.css tracks this exact number instead of an independently-hardcoded one. That
+// mismatch is exactly what caused the roll registry to get clipped off the bottom of the panel
+// once enough Story Tags were added: CSS still capped the panel at a flat 340px even once this
+// function (via rollLogSceneExtraHeight) was already asking Owlbear to grant a taller popover box
+// than that to hold them all.
+function rollLogPanelTargetHeight() {
+  return 380 + rollLogSceneExtraHeight();
 }
 function rollLogExpandedSize() {
-  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() + rollLogSceneExtraHeight() };
+  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: rollLogPanelTargetHeight() + rollLogBottomClearance() };
 }
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 // Set on the URL only by openRollLogPopover()'s deliberate "activate" action below — background.html's
@@ -3273,7 +3285,18 @@ function refreshRollLogWidget() {
   existing.replaceWith(renderRollLogPanel());
 }
 
+// Keeps .roll-log-panel's/.roll-log-scene's own CSS max-height rules (style.css) in lockstep with
+// what this render actually needs, instead of an independently-hardcoded number that can silently
+// fall out of sync the moment Story Tag count changes — see rollLogPanelTargetHeight()'s comment
+// for the bug that caused. Runs on every render (both backends, expanded or not) since it's cheap
+// and this is the one place guaranteed to fire whenever the numbers it publishes could have moved.
+function updateRollLogSizeVars() {
+  document.body.style.setProperty("--roll-log-panel-target-height", rollLogPanelTargetHeight() + "px");
+  document.body.style.setProperty("--roll-log-scene-max-height", rollLogSceneMaxHeight + "px");
+}
+
 function renderRollLogPanel() {
+  updateRollLogSizeVars();
   const widget = el("div", {
     id: "roll-log-widget",
     class:
@@ -3462,6 +3485,19 @@ async function computeRollLogExtraLift() {
   }
 }
 
+// Half the real game-window WIDTH, per explicit request — how tall the Scene Tags block (see
+// rollLogSceneExtraHeight) is allowed to grow before it scrolls internally. Same
+// round-trip-to-the-host-page caveat as computeRollLogExtraLift above, so the same try/catch
+// fallback shape.
+async function computeRollLogSceneMaxHeight() {
+  try {
+    const w = await OBR.viewport.getWidth();
+    return Math.round(w * 0.5);
+  } catch (e) {
+    return 180;
+  }
+}
+
 // ---------- boot ----------
 
 async function boot() {
@@ -3473,6 +3509,7 @@ async function boot() {
     selfRole = await OBR.player.getRole();
 
     rollLogExtraLift = await computeRollLogExtraLift();
+    rollLogSceneMaxHeight = await computeRollLogSceneMaxHeight();
     if (isRollLogView) {
       // Overrides body.roll-log-view's static padding-bottom in style.css (which stays as the
       // sensible fallback for the brief instant before this resolves) now that the real,
@@ -3545,6 +3582,8 @@ async function boot() {
     selfId = "local";
     selfName = lang === "it" ? "Anteprima locale" : "Local preview";
     selfRole = "PLAYER";
+    // No OBR.viewport here — the browser's own window stands in for "the game window" outside Owlbear.
+    rollLogSceneMaxHeight = Math.round(window.innerWidth * 0.5);
   }
 
   await loadRoomMeta();
