@@ -1016,13 +1016,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   padding: 2px 0;
   font-size: 0.95em;
 }
-/* Read-only stand-in for the chip/card's text <input> — used wherever a viewer can tick a Story
-   Tag/Status but not edit it (see renderSceneTab's non-GM branch, and the roll-log glance list). */
-.story-tag-text {
-  flex: 1;
-  padding: 2px 0;
-  font-size: 0.95em;
-}
 .active-tag-chip.color-amber { background: var(--amber-soft); border-color: var(--amber); }
 .active-tag-chip.color-teal { background: var(--teal-soft); border-color: var(--teal); }
 .active-tag-chip.color-violet { background: var(--violet-soft); border-color: var(--violet); }
@@ -1089,10 +1082,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .status-card.color-rose .status-box.on { background: var(--rose); color: #fff; }
 .status-card.color-sage .status-box { border-color: var(--sage); color: var(--sage); }
 .status-card.color-sage .status-box.on { background: var(--sage); color: #fff; }
-/* A Story Status's severity level is scene state the GM sets, not something a player ticks/spends
-   — see renderSceneTab's box-tick gating — so a non-GM viewer gets the same boxes with clicks
-   disabled instead of a whole separate read-out, keeping the two views visually identical. */
-.status-box.readonly { cursor: default; opacity: 0.85; }
 
 .notes-text { width: 100%; min-height: 70px; }
 
@@ -1264,6 +1253,9 @@ body.roll-log-view {
      overrides both together once the real screen-size-aware clearance is known. .roll-log-panel's
      max-height (below) reads this back so its own size stays correct even before boot() resolves. */
   --roll-log-bottom-clearance: 56px;
+  /* Same fallback pattern for the panel's own designed max-height (below) — app.js overrides this
+     once the real, scene-width-aware value (OBR.viewport.getWidth() * 0.5) is known. */
+  --roll-log-panel-max-height: 340px;
 }
 body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 
@@ -1333,12 +1325,14 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
      the excess spill past whichever edge of the popover's actual box was tightest — visible as the
      panel's own top or bottom edge, rounded corners included, being sliced off by the real iframe
      boundary rather than the list scrolling internally the way it's supposed to. Capping at
-     whichever is smaller — the designed 340px, or 100% of the real viewport this page actually
-     got minus the same bottom clearance body already reserves and a small top margin — means the
-     panel can never ask for more room than truly exists; a shorter box just shows fewer rows
-     before .roll-log-list's own scrollbar (below) kicks in, instead of the panel's outer shape
-     (and its bounding box) getting clipped by Owlbear's real window. */
-  max-height: min(340px, calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
+     whichever is smaller — the designed height (--roll-log-panel-max-height, now half the real
+     scene width per app.js's computeRollLogPanelMaxHeight() instead of a flat 340px, so a wide
+     table gets to show more history), or 100% of the real viewport this page actually got minus
+     the same bottom clearance body already reserves and a small top margin — means the panel can
+     never ask for more room than truly exists; a shorter box just shows fewer rows before
+     .roll-log-list's own scrollbar (below) kicks in, instead of the panel's outer shape (and its
+     bounding box) getting clipped by Owlbear's real window. */
+  max-height: min(var(--roll-log-panel-max-height, 340px), calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
   display: flex;
   flex-direction: column;
   background: var(--parchment);
@@ -1371,50 +1365,12 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 }
 .roll-log-header-btns .icon-btn-round:hover { background: rgba(242,230,201,0.22); }
 
-/* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
-   renderRollLogPanel). Grows the popover itself to show every current item at once (see
-   rollLogSceneExtraHeight() in app.js, re-asked for live via OBR.room.onMetadataChange whenever
-   the count changes) up to this same max-height — past that it scrolls internally instead of
-   keeping the popover growing without limit, which was the earlier behavior and had a real
-   problem: enough Story Tags pushed the roll registry below completely out of the panel (this
-   block wasn't allowed to shrink, so ALL the deficit landed on .roll-log-list once the panel hit
-   its own outer max-height cap). Capping here, plus .roll-log-list's own min-height below,
-   guarantees the roll registry always keeps room for a few rows no matter how many Story Tags
-   exist. Keep ROLL_LOG_SCENE_MAX_HEIGHT (app.js) equal to this max-height. */
-.roll-log-scene {
-  flex-shrink: 0;
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 8px 10px 4px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.roll-log-section-title {
-  font-family: "Cinzel", Georgia, serif;
-  font-size: 0.75em;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  margin-bottom: 4px;
-}
-.roll-log-registry-title { padding: 8px 10px 0; }
-.roll-log-scene-list { display: flex; flex-direction: column; gap: 4px; }
-.roll-log-scene .active-tag-chip.compact {
-  padding: 3px 8px;
-  margin-bottom: 0;
-  font-size: 0.85em;
-}
-
 .roll-log-list {
   overflow-y: auto;
-  padding: 4px 10px 8px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Guarantees room for a few rolls even when the Scene Tags block above (capped at 180px, see
-     its own comment) and the header eat into the rest of the panel's own outer max-height — a
-     flex item won't shrink below its min-height until the container itself is smaller than that,
-     so this is a hard floor, not just a suggestion. ~3 entries at this widget's normal row size. */
-  min-height: 132px;
 }
 .roll-log-empty {
   color: var(--ink-soft);

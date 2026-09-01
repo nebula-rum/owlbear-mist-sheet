@@ -13,7 +13,6 @@ const ROOM_KEYS = {
   company: "com.mistengine.hero-sheet/company",
   roster: "com.mistengine.hero-sheet/roster",
   rollLog: "com.mistengine.hero-sheet/rollLog",
-  storyTags: "com.mistengine.hero-sheet/storyTags",
 };
 function characterKey(id) {
   return "com.mistengine.hero-sheet/character/" + id;
@@ -57,6 +56,16 @@ const ROLL_LOG_RIGHT_CLEARANCE = 28;
 // has a sensible size for the brief instant before that async call returns.
 const ROLL_LOG_EXTRA_LIFT_FRACTION = 0.05;
 let rollLogExtraLift = 0;
+// The scrollable list inside the expanded panel was capped at a fixed 340px tall regardless of
+// how much actual table space is available — fine on a small scene, wasteful on a large one where
+// the user specifically wants to see more roll history at a glance. Instead of another hardcoded
+// number, size it relative to the real game-window width (OBR.viewport.getWidth(), the same kind
+// of real round trip as computeRollLogExtraLift's getHeight() call above) so it scales with the
+// table. Starts at the old 340 default until boot() resolves the real value, same "sensible
+// fallback for the brief pre-boot instant" pattern used everywhere else in this file.
+const ROLL_LOG_PANEL_MAX_HEIGHT_FRACTION = 0.5;
+const ROLL_LOG_PANEL_MAX_HEIGHT_DEFAULT = 340;
+let rollLogPanelMaxHeight = ROLL_LOG_PANEL_MAX_HEIGHT_DEFAULT;
 function rollLogBottomClearance() {
   return ROLL_LOG_BASE_BOTTOM_CLEARANCE + rollLogExtraLift;
 }
@@ -64,29 +73,14 @@ function rollLogCollapsedSize() {
   return { width: 40 + ROLL_LOG_RIGHT_CLEARANCE, height: 40 + rollLogBottomClearance() };
 }
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
-// 15% wider than the original 280/300 pair at the user's request.
-//
-// Height grows to fit every current Story Tag/Status (see rollLogSceneExtraHeight) instead of
-// always scrolling that block, up to ROLL_LOG_SCENE_MAX_HEIGHT — past that cap it scrolls
-// internally instead of continuing to grow, because unbounded growth was starving the roll
-// registry below it out of the panel entirely once a GM added enough Story Tags (the registry
-// list can shrink, the header/scene block can't, so ALL the deficit landed on the registry — see
-// .roll-log-list's own min-height in style.css for the other half of this fix, which guarantees
-// room for a few rolls no matter how tall the scene block gets). .roll-log-panel's own CSS
-// max-height (min(340px, real viewport minus clearance)) still applies underneath this as a hard
-// safety net for a screen too small to fit even the capped height.
-const ROLL_LOG_SCENE_MAX_HEIGHT = 180; // must match .roll-log-scene's max-height in style.css
-function rollLogSceneExtraHeight() {
-  const storyTags = getStoryTags();
-  const count = storyTags.tags.length + storyTags.statuses.length;
-  if (count === 0) return 0;
-  const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
-  const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
-  const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
-  return Math.min(ROLL_LOG_SCENE_MAX_HEIGHT, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
-}
+// 15% wider than the original 280/300 pair at the user's request. Height follows
+// rollLogPanelMaxHeight (see above) instead of a hardcoded 340, plus the same +40 chrome allowance
+// (header/padding) and bottom clearance as before. style.css still clamps the panel's own
+// max-height against the real available viewport (--roll-log-bottom-clearance) so asking for a
+// bigger popover here never actually causes clipping — it only raises the ceiling, the CSS min()
+// still enforces the floor.
 function rollLogExpandedSize() {
-  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: 380 + rollLogBottomClearance() + rollLogSceneExtraHeight() };
+  return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: rollLogPanelMaxHeight + 40 + rollLogBottomClearance() };
 }
 const isRollLogView = new URLSearchParams(window.location.search).get("view") === "rolllog";
 // Set on the URL only by openRollLogPopover()'s deliberate "activate" action below — background.html's
@@ -108,7 +102,6 @@ const LABELS = {
     footer: "Mist Engine — Hero Sheet · built for Owlbear Rodeo",
     tabSheet: "Hero",
     tabCompany: "Company",
-    tabScene: "Scene",
     tabRoster: "Roster",
     tabSettings: "Settings",
     playerLabel: "Player: ",
@@ -171,19 +164,6 @@ const LABELS = {
     removeActiveTagConfirm: "Remove this tag?",
     removeStatus: "Remove status",
     removeStatusConfirm: "Remove this status?",
-    sceneTitle: "Story Tags & Statuses",
-    sceneHintGm: "Give the scene tags and statuses of its own — an enemy's wound, a dim-light area. Players tick these from their own Active Tags section and choose their own +/-.",
-    sceneTagsTitle: "Scene Tags",
-    sceneEmpty: "Nothing active in the scene right now.",
-    addStoryTag: "+ Tag",
-    addStoryStatus: "+ Status",
-    storyTagPlaceholder: "story tag",
-    storyStatusPlaceholder: "story status",
-    removeStoryTag: "Remove story tag",
-    removeStoryTagConfirm: "Remove this story tag?",
-    removeStoryStatus: "Remove story status",
-    removeStoryStatusConfirm: "Remove this story status?",
-    tickStoryTagTitle: "Count toward Total Power (+1, or -1 if this tag hurts)",
     notesTitle: "Notes",
     notesPlaceholder: "Free-form notes…",
 
@@ -200,8 +180,6 @@ const LABELS = {
     defaultCategory3: "Greatness",
     tagColorLabel: "Tag color",
     statusColorLabel: "Status color",
-    storyTagColorLabel: "Story Tag color",
-    storyStatusColorLabel: "Story Status color",
 
     companyThemeTitle: "Company Theme",
     companyHintGm: "Shared by the whole party. As GM you can edit everything here; players can only cross a tag off when their Hero activates it.",
@@ -243,8 +221,7 @@ const LABELS = {
     powerModifierTitle: "Manual modifier (Favored/Disfavored, GM-granted tags…)",
     resetPowerTitle: "Reset Total Power tally",
     rollButtonTitle: "Roll 2d6 + Total Power",
-    rollLogTitle: "Scene",
-    rollRegistryTitle: "Roll Registry",
+    rollLogTitle: "Roll Log",
     rollLogEmpty: "No rolls yet.",
     clearRollLogTitle: "Clear roll history",
     clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
@@ -261,7 +238,6 @@ const LABELS = {
     footer: "Mist Engine — Scheda Eroe · creata per Owlbear Rodeo",
     tabSheet: "Eroe",
     tabCompany: "Compagnia",
-    tabScene: "Scena",
     tabRoster: "Personaggi",
     tabSettings: "Impostazioni",
     playerLabel: "Giocatore: ",
@@ -324,19 +300,6 @@ const LABELS = {
     removeActiveTagConfirm: "Rimuovere questo attributo?",
     removeStatus: "Rimuovi stato",
     removeStatusConfirm: "Rimuovere questo stato?",
-    sceneTitle: "Attributi e Stati della Scena",
-    sceneHintGm: "Dai alla scena attributi e stati propri — la ferita di un nemico, una zona in penombra. I giocatori li selezionano dalla propria sezione Attributi Attivi e scelgono da soli il proprio +/-.",
-    sceneTagsTitle: "Attributi di Scena",
-    sceneEmpty: "Nessun elemento attivo nella scena al momento.",
-    addStoryTag: "+ Attributo",
-    addStoryStatus: "+ Stato",
-    storyTagPlaceholder: "attributo di scena",
-    storyStatusPlaceholder: "stato di scena",
-    removeStoryTag: "Rimuovi attributo di scena",
-    removeStoryTagConfirm: "Rimuovere questo attributo di scena?",
-    removeStoryStatus: "Rimuovi stato di scena",
-    removeStoryStatusConfirm: "Rimuovere questo stato di scena?",
-    tickStoryTagTitle: "Conta per il Potere Totale (+1, o -1 se questo attributo ostacola)",
     notesTitle: "Note",
     notesPlaceholder: "Appunti liberi…",
 
@@ -353,8 +316,6 @@ const LABELS = {
     defaultCategory3: "Grandezza",
     tagColorLabel: "Colore Attributo",
     statusColorLabel: "Colore Stato",
-    storyTagColorLabel: "Colore Attributo di Scena",
-    storyStatusColorLabel: "Colore Stato di Scena",
 
     companyThemeTitle: "Tema della Compagnia",
     companyHintGm: "Condiviso da tutta la Compagnia. Come Narratore puoi modificare tutto qui; i giocatori possono solo barrare un Attributo quando il loro Eroe lo attiva.",
@@ -396,8 +357,7 @@ const LABELS = {
     powerModifierTitle: "Modificatore manuale (Favorito/Sfavorito, attributi concessi dal Narratore…)",
     resetPowerTitle: "Azzera il conteggio del Potere",
     rollButtonTitle: "Tira 2d6 + Potere Totale",
-    rollLogTitle: "Scena",
-    rollRegistryTitle: "Registro dei Tiri",
+    rollLogTitle: "Registro dei Tiri",
     rollLogEmpty: "Nessun tiro ancora.",
     clearRollLogTitle: "Cancella la cronologia dei tiri",
     clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
@@ -423,20 +383,6 @@ function setLang(newLang) {
   localStorage.setItem(LANG_KEY, newLang);
   renderApp();
 }
-
-// The roll-log corner popover (?view=rolllog, see background.html) is a genuinely separate page
-// in real Owlbear, not just a different render branch of this one — so toggling the language from
-// the main sheet's topbar only updates ITS OWN page via the renderApp() call in setLang() above;
-// the popover's `lang` was still whatever it loaded with. Same origin, though, so a localStorage
-// write in one window fires a "storage" event in every OTHER same-origin window/page — exactly
-// what's needed to keep the popover (and the expanded view, if that's open too) in sync live,
-// with no round trip through room metadata required.
-window.addEventListener("storage", (e) => {
-  if (e.key === LANG_KEY) {
-    lang = e.newValue === "it" ? "it" : "en";
-    renderApp();
-  }
-});
 
 // ---------- font size scaling (per-browser, everyone picks their own) ----------
 
@@ -1060,11 +1006,6 @@ function defaultCampaign() {
     // palette, but the GM can repick either from the same 5-color set used for categories.
     tagColor: "amber",
     statusColor: "sage",
-    // Story Tags/Statuses (GM-authored, scene-wide — see the Scene tab) get their own pair of
-    // colors, distinct from the personal Active Tag/Status pair above, so a glance at a chip's
-    // color alone tells you whether it's "mine" or "the Narrator's scene."
-    storyTagColor: "violet",
-    storyStatusColor: "rose",
     // The 3 track names on the back of every Theme card (and the Company Theme) — GM-defined,
     // campaign-wide, same as themeCategories above. Position matters (index 0/1/2), not the id,
     // since every Theme's own `tracks` array is always exactly 3 long in the same fixed order.
@@ -1086,8 +1027,6 @@ function normalizeCampaign(raw) {
       : defaults.themeCategories,
     tagColor: raw && COLOR_KEYS.includes(raw.tagColor) ? raw.tagColor : "amber",
     statusColor: raw && COLOR_KEYS.includes(raw.statusColor) ? raw.statusColor : "sage",
-    storyTagColor: raw && COLOR_KEYS.includes(raw.storyTagColor) ? raw.storyTagColor : "violet",
-    storyStatusColor: raw && COLOR_KEYS.includes(raw.storyStatusColor) ? raw.storyStatusColor : "rose",
     trackLabels: [0, 1, 2].map((i) =>
       rawTrackLabels && typeof rawTrackLabels[i] === "string" ? rawTrackLabels[i] : defaults.trackLabels[i]
     ),
@@ -1168,12 +1107,6 @@ function defaultCharacter(id) {
     tags: [],
     statuses: [],
     notes: "",
-    // Per-character override of a Story Tag/Status's polarity (storyTagOrStatusId -> "positive" |
-    // "negative") — see storyItemPolarity() below. The GM authors one default polarity per Story
-    // item, but the same scene condition can cut opposite ways for different characters (dim
-    // light hurts most people, but not someone with darkvision), so each character keeps their
-    // own override instead of sharing a single polarity across the whole table.
-    storyPolarity: {},
   };
 }
 
@@ -1224,12 +1157,6 @@ function normalizeCharacter(raw, id) {
       }))
     : [];
   c.statuses = Array.isArray(c.statuses) ? c.statuses.map(normalizeStatus) : [];
-  c.storyPolarity = {};
-  if (raw && raw.storyPolarity && typeof raw.storyPolarity === "object") {
-    Object.entries(raw.storyPolarity).forEach(([id, polarity]) => {
-      if (polarity === "positive" || polarity === "negative") c.storyPolarity[id] = polarity;
-    });
-  }
   c.themes.forEach((th) => {
     th.power = Array.isArray(th.power) ? th.power : [];
     th.weakness = Array.isArray(th.weakness) ? th.weakness : [];
@@ -1289,35 +1216,20 @@ function computeTotalPower(character) {
     if (rollSelection.has(tag.id)) total += tag.polarity === "negative" ? -1 : 1;
   });
 
-  // Story Tags (GM-authored, scene-wide — see the Scene tab) count exactly like a personal Active
-  // Tag: every ticked one adds its own +1/-1, uncapped, stacking with everything else here. Uses
-  // THIS character's own polarity override where set (see storyItemPolarity) since the same scene
-  // condition can cut opposite ways for different characters.
-  getStoryTags().tags.forEach((tag) => {
-    if (rollSelection.has(tag.id)) total += storyItemPolarity(character, tag) === "negative" ? -1 : 1;
-  });
-
   // Backpack items tick/burn exactly like a Power tag (+1 ticked, +3 instead if burned).
   character.backpack.forEach((item) => {
     if (rollSelection.has(item.id)) total += item.burned ? 3 : 1;
   });
 
-  // Story Statuses feed into the SAME best-positive/worst-negative pool as personal Statuses
-  // below (not a separate cap) — per the rulebook, only one positive and one negative Status
-  // count total toward a roll, regardless of whether it belongs to the character or the scene.
   let bestPositive = 0;
   let worstNegative = 0;
-  const tallyStatus = (s, polarity) => {
+  character.statuses.forEach((s) => {
     if (!rollSelection.has(s.id)) return;
     const level = s.boxes.lastIndexOf(true) + 1; // highest ticked box = current level; 0 if none
     if (level <= 0) return;
-    if (polarity === "negative") worstNegative = Math.max(worstNegative, level);
+    if (s.polarity === "negative") worstNegative = Math.max(worstNegative, level);
     else bestPositive = Math.max(bestPositive, level);
-  };
-  character.statuses.forEach((s) => tallyStatus(s, s.polarity));
-  // Story Statuses use THIS character's own polarity override where set (see storyItemPolarity),
-  // same reasoning as Story Tags above.
-  getStoryTags().statuses.forEach((s) => tallyStatus(s, storyItemPolarity(character, s)));
+  });
   total += bestPositive - worstNegative;
 
   total += rollModifiers.get(character.id) || 0;
@@ -1325,11 +1237,7 @@ function computeTotalPower(character) {
 }
 
 // Un-ticks every id belonging to this specific character (not the whole rollSelection Set, so a
-// GM mid-tally on a different Roster character isn't affected) and clears its modifier. Also
-// un-ticks any currently-ticked Story Tags/Statuses (see renderActiveTagsSection's Scene Tags
-// block) — they don't "belong" to any one character the way personal tags do, but a player
-// pressing Reset expects it to clear everything selected for their upcoming roll, story items
-// included, not just their own sheet's tags.
+// GM mid-tally on a different Roster character isn't affected) and clears its modifier.
 function resetTotalPower(character) {
   character.themes.forEach((theme) => {
     rollSelection.delete(theme.id);
@@ -1339,9 +1247,6 @@ function resetTotalPower(character) {
   character.tags.forEach((tag) => rollSelection.delete(tag.id));
   character.backpack.forEach((item) => rollSelection.delete(item.id));
   character.statuses.forEach((s) => rollSelection.delete(s.id));
-  const storyTags = getStoryTags();
-  storyTags.tags.forEach((tag) => rollSelection.delete(tag.id));
-  storyTags.statuses.forEach((s) => rollSelection.delete(s.id));
   rollModifiers.delete(character.id);
 }
 
@@ -1516,63 +1421,6 @@ function bindCompany() {
   return { company, save: () => scheduleRoomSave(ROOM_KEYS.company) };
 }
 
-// ---------- Story Tags & Statuses (GM-authored, shared room-wide — see the Scene tab) ----------
-// Same shape as a character's own tags/statuses (defaultCharacter/normalizeStatus above), but
-// scene-wide instead of personal: the GM adds/edits them on the Scene tab, everyone else can only
-// tick them (same tickToggle/rollSelection mechanism personal Active Tags already use) so they
-// count toward whichever character's Total Power is currently showing. See computeTotalPower().
-
-function defaultStoryTags() {
-  return { tags: [], statuses: [] };
-}
-
-function normalizeStoryTags(raw) {
-  const tags = raw && Array.isArray(raw.tags) ? raw.tags : [];
-  const statuses = raw && Array.isArray(raw.statuses) ? raw.statuses : [];
-  return {
-    tags: tags.map((tg) => ({
-      id: tg && tg.id ? tg.id : uid(),
-      text: tg && typeof tg.text === "string" ? tg.text : "",
-      polarity: tg && tg.polarity === "negative" ? "negative" : "positive",
-    })),
-    statuses: statuses.map(normalizeStatus),
-  };
-}
-
-function getStoryTags() {
-  return normalizeStoryTags(roomMeta[ROOM_KEYS.storyTags]);
-}
-
-// Same object-identity-reuse reasoning as bindCompany() above — otherwise an open delete-confirm
-// dialog on a story tag/status can be silently orphaned by an intervening re-render.
-function bindStoryTags() {
-  const existing = roomMeta[ROOM_KEYS.storyTags];
-  const storyTags = existing || getStoryTags();
-  roomMeta[ROOM_KEYS.storyTags] = storyTags;
-  return { storyTags, save: () => scheduleRoomSave(ROOM_KEYS.storyTags) };
-}
-
-// The GM authors one default polarity per Story Tag/Status, but each character can flip it for
-// themselves (see character.storyPolarity above) since the same scene condition can help one
-// character and hurt another. Falls back to the GM's authored default when this character hasn't
-// overridden it.
-function storyItemPolarity(character, item) {
-  // Defensive fallback, not just belt-and-suspenders: bindCharacter() (see its own comment) reuses
-  // whatever object is already sitting in roomMeta for this id as-is, WITHOUT re-running it through
-  // normalizeCharacter — so a character saved before storyPolarity existed (any real character in
-  // an already-live room, the moment this feature ships) legitimately has no storyPolarity field
-  // yet the first time it's touched this session.
-  const override = character.storyPolarity && character.storyPolarity[item.id];
-  return override === "positive" || override === "negative" ? override : item.polarity;
-}
-
-function setStoryItemPolarity(character, save, item, polarity) {
-  if (!character.storyPolarity) character.storyPolarity = {};
-  character.storyPolarity[item.id] = polarity;
-  save();
-  refreshTabContent();
-}
-
 // ---------- top-level render ----------
 
 function renderApp() {
@@ -1590,7 +1438,6 @@ function renderApp() {
     app.appendChild(el("div", { class: "standalone-banner" }, t("standaloneBanner")));
   }
 
-  if (activeTab === "scene" && !isGM()) activeTab = "sheet";
   if (activeTab === "roster" && !isGM()) activeTab = "sheet";
   if (activeTab === "settings" && !isGM()) activeTab = "sheet";
 
@@ -1613,7 +1460,6 @@ function renderApp() {
 
 function renderActiveTab() {
   if (activeTab === "company") return renderCompanyTab();
-  if (activeTab === "scene" && isGM()) return renderSceneTab();
   if (activeTab === "roster" && isGM()) return renderRosterTab();
   if (activeTab === "settings" && isGM()) return renderSettingsTab();
   return renderMySheetTab();
@@ -1695,14 +1541,6 @@ function renderTopbar() {
   ];
   if (isGM()) {
     tabButtons.push(
-      // GM-only: the GM authors Story Tags/Statuses here, but every player ticks them straight
-      // from their own Active Tags section (see renderActiveTagsSection) instead of needing to
-      // switch to this tab — so unlike the old design, players never need to open it at all.
-      el("button", {
-        class: "tab-btn" + (activeTab === "scene" ? " active" : ""),
-        text: t("tabScene"),
-        onclick: () => { activeTab = "scene"; renderApp(); },
-      }),
       el("button", {
         class: "tab-btn" + (activeTab === "roster" ? " active" : ""),
         text: t("tabRoster"),
@@ -2654,99 +2492,6 @@ function renderActiveTagsSection(character, save) {
   });
 
   section.appendChild(list);
-
-  // Story Tags/Statuses (GM-authored on the Scene tab, everyone else GM-only there — see
-  // renderSceneTab) surface here too, right in each character's own Active Tags section, so a
-  // player never has to switch tabs mid-roll to use one. Their own color (campaign.storyTagColor/
-  // storyStatusColor) keeps them visually distinct from this character's personal tags/statuses
-  // above. Text/severity level are read-only (span, not input; boxes not clickable) since only
-  // the GM authors those — but polarity is each character's OWN choice (storyItemPolarity/
-  // setStoryItemPolarity), not the GM's default, since the same scene condition can help one
-  // character and hurt another (a torch helps you, blinds someone with darkvision).
-  const storyTags = getStoryTags();
-  if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
-    const storyTagColorClass = "color-" + campaign.storyTagColor;
-    const storyStatusColorClass = "color-" + campaign.storyStatusColor;
-    section.appendChild(el("label", { class: "field-label", text: t("sceneTagsTitle") }));
-    const storyList = el("div", { class: "active-tags-list" });
-
-    storyTags.tags.forEach((tag) => {
-      const polarity = storyItemPolarity(character, tag);
-      const chip = el("div", { class: "active-tag-chip " + storyTagColorClass });
-      chip.appendChild(el("span", { class: "story-tag-text", text: tag.text || t("storyTagPlaceholder") }));
-      chip.appendChild(
-        el("button", {
-          class: "status-polarity-toggle " + (polarity === "negative" ? "negative" : "positive"),
-          title: polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-          text: polarity === "negative" ? "−" : "+",
-          onclick: () => {
-            setStoryItemPolarity(character, save, tag, polarity === "negative" ? "positive" : "negative");
-          },
-        })
-      );
-      chip.appendChild(
-        tickToggle(rollSelection.has(tag.id), t("tickStoryTagTitle"), () => {
-          if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
-          else rollSelection.add(tag.id);
-          refreshTabContent();
-        })
-      );
-      storyList.appendChild(chip);
-    });
-
-    storyTags.statuses.forEach((s) => {
-      const polarity = storyItemPolarity(character, s);
-      const card = el("div", { class: "status-card " + storyStatusColorClass });
-      const topRow = el("div", { class: "status-top-row" });
-      topRow.appendChild(el("span", { class: "story-tag-text", text: s.name || t("storyStatusPlaceholder") }));
-      topRow.appendChild(
-        el("button", {
-          class: "status-polarity-toggle " + (polarity === "negative" ? "negative" : "positive"),
-          title: polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-          text: polarity === "negative" ? "−" : "+",
-          onclick: () => {
-            setStoryItemPolarity(character, save, s, polarity === "negative" ? "positive" : "negative");
-          },
-        })
-      );
-      // Radio-style within the story pool only — cross-pool exclusion with this character's own
-      // personal Statuses isn't attempted since computeTotalPower() already takes the max across
-      // both pools regardless of how many are ticked, so two simultaneously-ticked positives from
-      // different pools are harmless, just not additive.
-      topRow.appendChild(
-        tickToggle(
-          rollSelection.has(s.id),
-          polarity === "negative" ? t("tickStatusNegativeTitle") : t("tickStatusPositiveTitle"),
-          () => {
-            if (rollSelection.has(s.id)) {
-              rollSelection.delete(s.id);
-            } else {
-              storyTags.statuses.forEach((other) => {
-                if (other.id !== s.id && storyItemPolarity(character, other) === polarity) rollSelection.delete(other.id);
-              });
-              rollSelection.add(s.id);
-            }
-            refreshTabContent();
-          }
-        )
-      );
-      card.appendChild(topRow);
-
-      // Severity level is scene state the GM sets on the Scene tab, not something a player
-      // uses/spends the way a tick is — read-only here, boxes not clickable.
-      const boxesRow = el("div", { class: "status-boxes" });
-      s.boxes.forEach((on, i) => {
-        boxesRow.appendChild(
-          el("button", { class: "status-box readonly" + (on ? " on" : ""), text: String(i + 1), disabled: "disabled" })
-        );
-      });
-      card.appendChild(boxesRow);
-      storyList.appendChild(card);
-    });
-
-    section.appendChild(storyList);
-  }
-
   return section;
 }
 
@@ -2827,164 +2572,6 @@ function renderCompanyTab() {
   }
 
   wrap.appendChild(card);
-  return wrap;
-}
-
-// ---------- Scene tab (GM authors, everyone ticks) ----------
-// Story Tags & Statuses represent conditions the Narrator gives the SCENE, not a character — an
-// enemy's wound, a dim-light area — so they need to modify everyone's roll, not just one sheet's.
-// This tab is GM-only (authoring/removal); players never open it — instead the same items surface
-// directly inside each character's own Active Tags section (see renderActiveTagsSection), each
-// player ticking them and choosing their own +/- there. So unlike a first pass at this feature,
-// there's no tick-toggle or read-only branch here at all — every control on this tab always
-// mutates the shared storyTags object, same as Company tab's GM-only textareas.
-
-function renderSceneTab() {
-  const campaign = getCampaign();
-  const tagColorClass = "color-" + campaign.storyTagColor;
-  const statusColorClass = "color-" + campaign.storyStatusColor;
-  const { storyTags, save } = bindStoryTags();
-
-  const wrap = el("div", { class: "section" });
-
-  const addTagBtn = el("button", {
-    class: "btn small add-btn",
-    text: t("addStoryTag"),
-    onclick: () => {
-      storyTags.tags.push({ id: uid(), text: "", polarity: "positive" });
-      save();
-      refreshTabContent();
-      refreshRollLogWidget(); // standalone's embedded corner widget doesn't get its own metadata-change tick
-    },
-  });
-  const addStatusBtn = el("button", {
-    class: "btn small add-btn",
-    text: t("addStoryStatus"),
-    onclick: () => {
-      storyTags.statuses.push({ id: uid(), name: "", boxes: [false, false, false, false, false, false], polarity: "positive" });
-      save();
-      refreshTabContent();
-      refreshRollLogWidget();
-    },
-  });
-  wrap.appendChild(
-    el("div", { class: "section-title" }, [
-      el("span", { text: t("sceneTitle") }),
-      el("div", { class: "title-buttons" }, [addTagBtn, addStatusBtn]),
-    ])
-  );
-  wrap.appendChild(el("div", { class: "hint" }, t("sceneHintGm")));
-
-  if (storyTags.tags.length === 0 && storyTags.statuses.length === 0) {
-    wrap.appendChild(el("div", { class: "party-empty", text: t("sceneEmpty") }));
-    return wrap;
-  }
-
-  const list = el("div", { class: "active-tags-list" });
-
-  storyTags.tags.forEach((tag) => {
-    const chip = el("div", { class: "active-tag-chip " + tagColorClass });
-    chip.appendChild(
-      el("input", {
-        type: "text",
-        value: tag.text,
-        placeholder: t("storyTagPlaceholder"),
-        oninput: (e) => { tag.text = e.target.value; save(); },
-      })
-    );
-    // This is just the DEFAULT polarity a new character starts with — each player can flip their
-    // own copy from their Active Tags section (see storyItemPolarity/setStoryItemPolarity).
-    chip.appendChild(
-      el("button", {
-        class: "status-polarity-toggle " + (tag.polarity === "negative" ? "negative" : "positive"),
-        title: tag.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-        text: tag.polarity === "negative" ? "−" : "+",
-        onclick: () => {
-          tag.polarity = tag.polarity === "negative" ? "positive" : "negative";
-          save();
-          refreshTabContent();
-        },
-      })
-    );
-    const trash = el("button", {
-      class: "chip-trash",
-      title: t("removeStoryTag"),
-      "aria-label": t("removeStoryTag"),
-      onclick: () => {
-        showConfirmDialog(t("removeStoryTagConfirm"), () => {
-          storyTags.tags = storyTags.tags.filter((tg) => tg.id !== tag.id);
-          save();
-          refreshTabContent();
-          refreshRollLogWidget();
-        });
-      },
-    });
-    trash.appendChild(trashIcon());
-    chip.appendChild(trash);
-    list.appendChild(chip);
-  });
-
-  storyTags.statuses.forEach((s) => {
-    const card = el("div", { class: "status-card " + statusColorClass });
-    const topRow = el("div", { class: "status-top-row" });
-
-    topRow.appendChild(
-      el("input", {
-        type: "text",
-        class: "status-name-input",
-        value: s.name,
-        placeholder: t("storyStatusPlaceholder"),
-        oninput: (e) => { s.name = e.target.value; save(); },
-      })
-    );
-    topRow.appendChild(
-      el("button", {
-        class: "status-polarity-toggle " + (s.polarity === "negative" ? "negative" : "positive"),
-        title: s.polarity === "negative" ? t("statusPolarityNegativeTitle") : t("statusPolarityPositiveTitle"),
-        text: s.polarity === "negative" ? "−" : "+",
-        onclick: () => {
-          s.polarity = s.polarity === "negative" ? "positive" : "negative";
-          save();
-          refreshTabContent();
-        },
-      })
-    );
-    const trash = el("button", {
-      class: "chip-trash",
-      title: t("removeStoryStatus"),
-      "aria-label": t("removeStoryStatus"),
-      onclick: () => {
-        showConfirmDialog(t("removeStoryStatusConfirm"), () => {
-          storyTags.statuses = storyTags.statuses.filter((x) => x.id !== s.id);
-          save();
-          refreshTabContent();
-          refreshRollLogWidget();
-        });
-      },
-    });
-    trash.appendChild(trashIcon());
-    topRow.appendChild(trash);
-    card.appendChild(topRow);
-
-    const boxesRow = el("div", { class: "status-boxes" });
-    s.boxes.forEach((on, i) => {
-      boxesRow.appendChild(
-        el("button", {
-          class: "status-box" + (on ? " on" : ""),
-          text: String(i + 1),
-          onclick: () => {
-            s.boxes[i] = !s.boxes[i];
-            save();
-            refreshTabContent();
-          },
-        })
-      );
-    });
-    card.appendChild(boxesRow);
-    list.appendChild(card);
-  });
-
-  wrap.appendChild(list);
   return wrap;
 }
 
@@ -3220,20 +2807,6 @@ function renderSettingsTab() {
       refreshTabContent();
     })
   );
-  wrap.appendChild(el("label", { class: "field-label", text: t("storyTagColorLabel") }));
-  wrap.appendChild(
-    renderColorSwatchPicker(campaign.storyTagColor, (c) => {
-      updateCampaign((camp) => { camp.storyTagColor = c; });
-      refreshTabContent();
-    })
-  );
-  wrap.appendChild(el("label", { class: "field-label", text: t("storyStatusColorLabel") }));
-  wrap.appendChild(
-    renderColorSwatchPicker(campaign.storyStatusColor, (c) => {
-      updateCampaign((camp) => { camp.storyStatusColor = c; });
-      refreshTabContent();
-    })
-  );
 
   return wrap;
 }
@@ -3297,8 +2870,6 @@ function renderRollLogPanel() {
   const panel = el("div", { class: "roll-log-panel" });
 
   const header = el("div", { class: "roll-log-header" });
-  // "Scene" is this whole always-open widget's identity now — the two sections inside (Scene Tags,
-  // Roll Registry) get their own headings just below, see rollLogSectionTitle usages above/below.
   header.appendChild(el("span", { class: "roll-log-title", text: t("rollLogTitle") }));
   const headerBtns = el("div", { class: "roll-log-header-btns" });
   // Personal mute toggle — affects only this viewer's own copy of the panel (see
@@ -3338,51 +2909,6 @@ function renderRollLogPanel() {
   header.appendChild(headerBtns);
   panel.appendChild(header);
 
-  // Read-only glance at whatever the GM currently has active in the scene, so a player can tell
-  // "is there a story tag/status affecting my roll right now" without leaving this always-open
-  // corner popover to go check the Scene tab. Deliberately NOT wired into rollSelection/tick here
-  // — ticking happens from each character's own Active Tags section instead (see
-  // renderActiveTagsSection), which is the one place guaranteed to be sharing that character's own
-  // JS context (rollSelection is a plain in-memory Set, not synced room metadata — see its own
-  // comment above — so this separate popover page couldn't tick into the same Set even if it
-  // tried).
-  //
-  // Grows to fit every current item up to ROLL_LOG_SCENE_MAX_HEIGHT (see rollLogSceneExtraHeight,
-  // called again from boot()'s OBR.room.onMetadataChange whenever the count changes while this
-  // panel is expanded) — past that cap the block itself scrolls (see its CSS) rather than the
-  // popover growing without limit, which was pushing the roll registry below it out of view
-  // entirely once a GM added enough Story Tags.
-  const storyTags = getStoryTags();
-  if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
-    const campaign = getCampaign();
-    const tagColorClass = "color-" + campaign.storyTagColor;
-    const statusColorClass = "color-" + campaign.storyStatusColor;
-    const sceneBlock = el("div", { class: "roll-log-scene" });
-    sceneBlock.appendChild(el("div", { class: "roll-log-section-title", text: t("sceneTagsTitle") }));
-    const sceneList = el("div", { class: "roll-log-scene-list" });
-    storyTags.tags.forEach((tag) => {
-      sceneList.appendChild(
-        el("div", { class: "active-tag-chip compact " + tagColorClass }, [
-          el("span", { class: "story-tag-text", text: tag.text || t("storyTagPlaceholder") }),
-        ])
-      );
-    });
-    storyTags.statuses.forEach((s) => {
-      const level = s.boxes.lastIndexOf(true) + 1;
-      sceneList.appendChild(
-        el("div", { class: "active-tag-chip compact " + statusColorClass }, [
-          el("span", {
-            class: "story-tag-text",
-            text: (s.name || t("storyStatusPlaceholder")) + (level > 0 ? " (" + level + ")" : ""),
-          }),
-        ])
-      );
-    });
-    sceneBlock.appendChild(sceneList);
-    panel.appendChild(sceneBlock);
-  }
-
-  panel.appendChild(el("div", { class: "roll-log-section-title roll-log-registry-title", text: t("rollRegistryTitle") }));
   const list = el("div", { class: "roll-log-list" });
   const entries = getRollLog();
   if (entries.length === 0) {
@@ -3441,9 +2967,16 @@ function renderRollLogPanel() {
   // Keep the newest roll (now at the bottom) in view. Deferred a frame: `list` isn't laid out
   // yet — scrollHeight on a still-detached node reads 0 — and every call site attaches `widget`
   // to the document synchronously right after this function returns, so by the next frame it has
-  // real layout to scroll against.
+  // real layout to scroll against. A single rAF wasn't always enough once there were several
+  // entries: with 5+ rolls the panel/list can still be settling its own height (the popover resize
+  // from openRollLogPopover()/toggleRollLogExpanded() and this render can land in the same tick),
+  // so the first frame's scrollHeight was sometimes read before the browser had finished laying
+  // out the now-taller list, leaving the newest entry just below the visible edge. Nesting a
+  // second rAF waits one extra frame for that layout to fully settle before measuring/scrolling.
   requestAnimationFrame(() => {
-    list.scrollTop = list.scrollHeight;
+    requestAnimationFrame(() => {
+      list.scrollTop = list.scrollHeight;
+    });
   });
 
   return widget;
@@ -3462,6 +2995,19 @@ async function computeRollLogExtraLift() {
   }
 }
 
+// Turns the real game-window width into the expanded panel's max-height — see the comment on
+// ROLL_LOG_PANEL_MAX_HEIGHT_FRACTION above. Same defensive try/catch as computeRollLogExtraLift:
+// OBR.viewport.getWidth() is a real round trip to the host page, so a rejected promise falls back
+// to the old fixed default rather than blocking boot().
+async function computeRollLogPanelMaxHeight() {
+  try {
+    const w = await OBR.viewport.getWidth();
+    return Math.round(w * ROLL_LOG_PANEL_MAX_HEIGHT_FRACTION);
+  } catch (e) {
+    return ROLL_LOG_PANEL_MAX_HEIGHT_DEFAULT;
+  }
+}
+
 // ---------- boot ----------
 
 async function boot() {
@@ -3473,6 +3019,7 @@ async function boot() {
     selfRole = await OBR.player.getRole();
 
     rollLogExtraLift = await computeRollLogExtraLift();
+    rollLogPanelMaxHeight = await computeRollLogPanelMaxHeight();
     if (isRollLogView) {
       // Overrides body.roll-log-view's static padding-bottom in style.css (which stays as the
       // sensible fallback for the brief instant before this resolves) now that the real,
@@ -3485,6 +3032,10 @@ async function boot() {
       // it at all, instead of just trusting the popover box is exactly the size we asked Owlbear
       // for via rollLogExpandedSize()/setWidth/setHeight.
       document.body.style.setProperty("--roll-log-bottom-clearance", clearance);
+      // Same idea for the panel's designed max-height (see ROLL_LOG_PANEL_MAX_HEIGHT_FRACTION) —
+      // style.css's min() still clamps this against the real viewport, so publishing a bigger
+      // number here only raises how tall the panel is *allowed* to want to be.
+      document.body.style.setProperty("--roll-log-panel-max-height", rollLogPanelMaxHeight + "px");
     }
 
     OBR.player.onChange(async () => {
@@ -3522,11 +3073,6 @@ async function boot() {
         pendingRenderAfterEdit = true;
       } else {
         renderApp();
-        // A GM editing Story Tags/Statuses on the Scene tab (a different window entirely) can
-        // change how many exist — re-ask the popover for its ideal size now that renderApp() has
-        // rebuilt this page's own panel with the new count, so it keeps growing/shrinking to fit
-        // every item with no scrolling (see rollLogSceneExtraHeight()). No-op while collapsed.
-        if (isRollLogView && rollLogExpanded) setRollLogPopoverSize(true);
       }
       // Someone (possibly this same client, echoing its own save) just changed room metadata —
       // if the roll log's last entry is one we haven't announced yet, a roll genuinely happened
