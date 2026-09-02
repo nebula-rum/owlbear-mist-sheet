@@ -1341,9 +1341,9 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
      boundary rather than the list scrolling internally the way it's supposed to. Capping at
      whichever is smaller — the target height, or 100% of the real viewport this page actually got
      minus the same bottom clearance body already reserves and a small top margin — means the
-     panel can never ask for more room than truly exists; a shorter box just shows fewer rows
-     before .roll-log-list's own scrollbar (below) kicks in, instead of the panel's outer shape
-     (and its bounding box) getting clipped by Owlbear's real window. */
+     panel can never ask for more room than truly exists; a shorter box just shows less of the
+     Scene Tags/History blocks before their own scrollbars kick in, instead of the panel's outer
+     shape (and its bounding box) getting clipped by Owlbear's real window. */
   max-height: min(var(--roll-log-panel-target-height, 340px), calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
   display: flex;
   flex-direction: column;
@@ -1378,17 +1378,17 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 .roll-log-header-btns .icon-btn-round:hover { background: rgba(242,230,201,0.22); }
 
 /* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
-   renderRollLogPanel). Grows the popover itself to show every current item at once (see
-   rollLogSceneExtraHeight() in app.js, re-asked for live via OBR.room.onMetadataChange whenever
-   the count changes) up to --roll-log-scene-max-height (half the real game-window width, computed
-   once at boot and published by updateRollLogSizeVars() — see rollLogSceneMaxHeight in app.js).
-   That cap covers the common case (Owlbear actually granted the taller popover box this asked
-   for), but a short real screen can still leave less room than both this block AND the roll
-   registry below want at once — flex-shrink stays at its default (1, i.e. NOT 0) specifically so
-   THIS block gives way first when that happens: it has no min-height of its own, while
-   .roll-log-list below has a hard one (see its own comment), so squeezing always lands here,
-   scrolling internally, rather than pushing the registry below the panel's visible bottom edge
-   entirely — which is exactly what going with flex-shrink:0 here used to do. */
+   renderRollLogPanel) — "the heart of gameplay" per the user, so it gets first claim on the
+   panel's space. Grows to show every current item at once (see rollLogSceneExtraHeight() in
+   app.js, re-asked for live via OBR.room.onMetadataChange whenever the count changes) up to
+   --roll-log-scene-max-height, published by updateRollLogSizeVars() as exactly the combined
+   height of everything else in the panel (header + Last Roll + History, see rollLogOtherHeight())
+   — which is what makes this "up to half the panel" self-enforcing: Scene Tags literally cannot
+   be taller than the rest of the panel combined. flex-shrink stays at its default (1, i.e. NOT 0)
+   so that on a real screen too short to fit both halves at once, THIS block is the one that gives
+   way and scrolls internally — .roll-log-last below it has flex-shrink:0 (see its own comment) so
+   the one thing the user said always matters ("typically only the last roll really matters")
+   never gets squeezed. */
 .roll-log-scene {
   max-height: var(--roll-log-scene-max-height, 180px);
   overflow-y: auto;
@@ -1403,7 +1403,6 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   color: var(--ink-soft);
   margin-bottom: 4px;
 }
-.roll-log-registry-title { padding: 8px 10px 0; }
 .roll-log-scene-list { display: flex; flex-direction: column; gap: 4px; }
 .roll-log-scene .active-tag-chip.compact {
   padding: 3px 8px;
@@ -1411,17 +1410,35 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   font-size: 0.85em;
 }
 
-.roll-log-list {
+/* The one thing that's always visible regardless of how many Story Tags exist or whether History
+   is open — see .roll-log-scene's own comment for why flex-shrink:0 here is the load-bearing half
+   of that guarantee. */
+.roll-log-last {
+  flex-shrink: 0;
+  padding: 8px 10px;
+}
+.roll-log-last-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.roll-log-last-header .roll-log-section-title { margin-bottom: 0; }
+.roll-log-history-btn { width: 22px; height: 22px; }
+.roll-log-history-btn.active { background: var(--amber-soft); color: var(--ink); }
+
+/* Opt-in, so unlike Scene Tags/Last Roll above it doesn't need a share of "guaranteed" space —
+   a flat cap it scrolls past is enough since the user chose to open this. Oldest-first, newest
+   (i.e. second-most-recent overall — the true newest is in .roll-log-last above) at the bottom. */
+.roll-log-history {
+  flex-shrink: 1;
+  max-height: 220px;
   overflow-y: auto;
-  padding: 4px 10px 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Guarantees room for a few rolls even when the Scene Tags block above (capped at 180px, see
-     its own comment) and the header eat into the rest of the panel's own outer max-height — a
-     flex item won't shrink below its min-height until the container itself is smaller than that,
-     so this is a hard floor, not just a suggestion. ~3 entries at this widget's normal row size. */
-  min-height: 132px;
 }
 .roll-log-empty {
   color: var(--ink-soft);

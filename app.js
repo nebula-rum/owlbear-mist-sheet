@@ -66,17 +66,47 @@ function rollLogCollapsedSize() {
 // Expanded panel width is the CSS .roll-log-panel max-width (280px) plus a fixed margin — kept
 // 15% wider than the original 280/300 pair at the user's request.
 //
-// Scene Tags block height grows to fit every current Story Tag/Status (see
-// rollLogSceneExtraHeight) instead of always scrolling that block, up to rollLogSceneMaxHeight —
-// half the real game-window WIDTH per explicit request (computed once at boot, see
-// computeRollLogSceneMaxHeight near boot() — mirrors how rollLogExtraLift above is computed from
-// the window HEIGHT), not a flat pixel count. Past that cap it scrolls internally instead of
-// continuing to grow, because unbounded growth was starving the roll registry below it out of the
-// panel entirely once a GM added enough Story Tags (the registry list can shrink, the header/scene
-// block can't, so ALL the deficit landed on the registry — see .roll-log-list's own min-height in
-// style.css for the other half of this fix, which guarantees room for a few rolls no matter how
-// tall the scene block gets).
-let rollLogSceneMaxHeight = 180; // sensible default for the instant before boot() resolves the real width
+// The panel is built from 3 stacked pieces — see renderRollLogPanel(): a fixed header, the Scene
+// Tags glance (grows with content, see rollLogSceneExtraHeight below), and a "Last Roll" block
+// (a small fixed-size header + just the single newest roll, with a History toggle that reveals the
+// rest as an extra scrollable block). Scene Tags are "the heart of gameplay" per the user, so they
+// get first claim on space; everything else here computes how much room the OTHER pieces need so
+// that claim can be expressed as "up to half the panel" without a circular fight over space (see
+// rollLogSceneExtraHeight's own comment for the exact math).
+const ROLL_LOG_HEADER_HEIGHT = 48; // .roll-log-header, measured
+const ROLL_LOG_LAST_SECTION_HEIGHT = 92; // .roll-log-last: its own header row + one entry + padding, measured
+let rollLogHistoryExpanded = false; // per-viewer scratch UI state, not synced — same as rollLogExpanded
+
+// History is capped at a flat height (unlike Scene Tags' "half the panel" rule below) since it's
+// opt-in — the user explicitly asked for it, so it's fine for it to just scroll within a modest
+// budget rather than reshaping the whole panel further.
+const ROLL_LOG_HISTORY_ROW_HEIGHT = 46;
+const ROLL_LOG_HISTORY_PADDING = 16;
+const ROLL_LOG_HISTORY_MAX_HEIGHT = 220;
+function rollLogHistoryExtraHeight() {
+  if (!rollLogHistoryExpanded) return 0;
+  // The newest entry already shows in the "Last Roll" block below, so History only needs to hold
+  // everything else.
+  const count = Math.max(0, getRollLog().length - 1);
+  if (count === 0) return 0;
+  return Math.min(ROLL_LOG_HISTORY_MAX_HEIGHT, count * ROLL_LOG_HISTORY_ROW_HEIGHT + ROLL_LOG_HISTORY_PADDING);
+}
+
+// Everything in the panel EXCEPT Scene Tags — this doubles as the Scene Tags cap itself (see
+// below), which is what makes "up to half the panel" work out arithmetically: if Scene Tags can
+// never be taller than everything else combined, then Scene Tags can never be more than half of
+// (Scene Tags + everything else) = half of the panel's total height.
+function rollLogOtherHeight() {
+  return ROLL_LOG_HEADER_HEIGHT + ROLL_LOG_LAST_SECTION_HEIGHT + rollLogHistoryExtraHeight();
+}
+
+// Grows to fit every current Story Tag/Status instead of always scrolling, up to
+// rollLogOtherHeight() above (i.e. up to half the panel) — past that cap it scrolls internally
+// instead of continuing to grow. An earlier version of this used a flat/width-based cap instead,
+// which had a real problem: it let Scene Tags starve the roll history below it out of the panel
+// entirely. Deriving the cap from the OTHER content's own height instead makes that structurally
+// impossible — Scene Tags literally cannot claim more room than the rest of the panel has, no
+// matter how many tags exist.
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
@@ -84,18 +114,15 @@ function rollLogSceneExtraHeight() {
   const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
   const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
   const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
-  return Math.min(rollLogSceneMaxHeight, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
+  return Math.min(rollLogOtherHeight(), SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
 }
 // The panel's own target height, NOT counting rollLogBottomClearance() (that's separate page
 // padding below the panel, not part of its box) — exposed live as a CSS custom property (see
 // updateRollLogSizeVars(), called from renderRollLogPanel()) so .roll-log-panel's own safety-net
-// max-height in style.css tracks this exact number instead of an independently-hardcoded one. That
-// mismatch is exactly what caused the roll registry to get clipped off the bottom of the panel
-// once enough Story Tags were added: CSS still capped the panel at a flat 340px even once this
-// function (via rollLogSceneExtraHeight) was already asking Owlbear to grant a taller popover box
-// than that to hold them all.
+// max-height in style.css tracks this exact number instead of an independently-hardcoded one that
+// can fall out of sync with what's actually being asked for.
 function rollLogPanelTargetHeight() {
-  return 380 + rollLogSceneExtraHeight();
+  return rollLogOtherHeight() + rollLogSceneExtraHeight();
 }
 function rollLogExpandedSize() {
   return { width: 342 + ROLL_LOG_RIGHT_CLEARANCE, height: rollLogPanelTargetHeight() + rollLogBottomClearance() };
@@ -256,7 +283,9 @@ const LABELS = {
     resetPowerTitle: "Reset Total Power tally",
     rollButtonTitle: "Roll 2d6 + Total Power",
     rollLogTitle: "Scene",
-    rollRegistryTitle: "Roll Registry",
+    lastRollTitle: "Last Roll",
+    showHistoryTitle: "Show roll history",
+    hideHistoryTitle: "Hide roll history",
     rollLogEmpty: "No rolls yet.",
     clearRollLogTitle: "Clear roll history",
     clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
@@ -409,7 +438,9 @@ const LABELS = {
     resetPowerTitle: "Azzera il conteggio del Potere",
     rollButtonTitle: "Tira 2d6 + Potere Totale",
     rollLogTitle: "Scena",
-    rollRegistryTitle: "Registro dei Tiri",
+    lastRollTitle: "Ultimo Tiro",
+    showHistoryTitle: "Mostra la cronologia dei tiri",
+    hideHistoryTitle: "Nascondi la cronologia dei tiri",
     rollLogEmpty: "Nessun tiro ancora.",
     clearRollLogTitle: "Cancella la cronologia dei tiri",
     clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
@@ -753,6 +784,19 @@ function collapseIcon() {
       ["polyline", { points: "20 10 14 10 14 4" }],
       ["line", { x1: "14", y1: "10", x2: "21", y2: "3" }],
       ["line", { x1: "10", y1: "14", x2: "3", y2: "21" }],
+    ],
+    { size: 14, strokeWidth: 2.2 }
+  );
+}
+
+// A plain clock face — the roll-log widget's History toggle (show/hide older rolls). Picked over
+// a clock-with-rewind-arrow variant specifically to avoid looking like resetIcon() below, which
+// already owns that "arc + arrow" shape for a very different action (Reset Total Power).
+function clockIcon() {
+  return svgIcon(
+    [
+      ["circle", { cx: "12", cy: "12", r: "9" }],
+      ["polyline", { points: "12 7 12 12 15.5 14" }],
     ],
     { size: 14, strokeWidth: 2.2 }
   );
@@ -3292,7 +3336,52 @@ function refreshRollLogWidget() {
 // and this is the one place guaranteed to fire whenever the numbers it publishes could have moved.
 function updateRollLogSizeVars() {
   document.body.style.setProperty("--roll-log-panel-target-height", rollLogPanelTargetHeight() + "px");
-  document.body.style.setProperty("--roll-log-scene-max-height", rollLogSceneMaxHeight + "px");
+  document.body.style.setProperty("--roll-log-scene-max-height", rollLogOtherHeight() + "px");
+}
+
+// One roll's row — shared between the "Last Roll" block (just the newest one) and the History
+// list (everything older), so the two stay visually identical.
+function buildRollLogEntryRow(entry) {
+  const row = el("div", { class: "roll-log-entry" });
+  const [d1, d2] = entry.dice || [0, 0];
+
+  const topLine = el("div", { class: "roll-log-entry-top" });
+  topLine.appendChild(
+    el("span", {
+      class: "roll-log-entry-name",
+      style: "color: " + colorForCharacterId(entry.characterId),
+      text: (entry.characterName || "") + ":",
+    })
+  );
+  if (entry.timestamp) {
+    topLine.appendChild(
+      el("span", {
+        class: "roll-log-entry-time",
+        text: new Date(entry.timestamp).toLocaleTimeString(lang === "it" ? "it-IT" : "en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      })
+    );
+  }
+  row.appendChild(topLine);
+
+  const mathLine = el("div", { class: "roll-log-entry-math" });
+  mathLine.appendChild(el("span", { text: `2d6 (${d1}+${d2}) + ` }));
+  // Bold, plain black — see .roll-log-power-value in style.css for why this isn't
+  // accent-colored like the sheet's own Total Power chip.
+  mathLine.appendChild(el("span", { class: "roll-log-power-value", text: String(entry.power) }));
+  mathLine.appendChild(el("span", { text: " = " }));
+  const outcome = rollOutcome(entry.total);
+  mathLine.appendChild(
+    el("span", {
+      class: "roll-log-total roll-log-total-" + outcome,
+      title: t("rollOutcome" + outcome[0].toUpperCase() + outcome.slice(1)),
+      text: String(entry.total),
+    })
+  );
+  row.appendChild(mathLine);
+  return row;
 }
 
 function renderRollLogPanel() {
@@ -3370,11 +3459,10 @@ function renderRollLogPanel() {
   // comment above — so this separate popover page couldn't tick into the same Set even if it
   // tried).
   //
-  // Grows to fit every current item up to ROLL_LOG_SCENE_MAX_HEIGHT (see rollLogSceneExtraHeight,
-  // called again from boot()'s OBR.room.onMetadataChange whenever the count changes while this
-  // panel is expanded) — past that cap the block itself scrolls (see its CSS) rather than the
-  // popover growing without limit, which was pushing the roll registry below it out of view
-  // entirely once a GM added enough Story Tags.
+  // Grows to fit every current item up to half the panel (see rollLogSceneExtraHeight, called
+  // again from boot()'s OBR.room.onMetadataChange whenever the count changes while this panel is
+  // expanded) — past that cap the block itself scrolls (see its CSS) rather than continuing to
+  // grow and pushing the Last Roll/History block below it off the panel.
   const storyTags = getStoryTags();
   if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
     const campaign = getCampaign();
@@ -3405,69 +3493,55 @@ function renderRollLogPanel() {
     panel.appendChild(sceneBlock);
   }
 
-  panel.appendChild(el("div", { class: "roll-log-section-title roll-log-registry-title", text: t("rollRegistryTitle") }));
-  const list = el("div", { class: "roll-log-list" });
+  // "Last Roll" is the one thing here that's always visible no matter how tight space gets (see
+  // .roll-log-last's flex-shrink:0 in style.css) — per the user, it's typically the only roll
+  // result that actually matters moment to moment. Everything older lives behind the History
+  // toggle instead of always taking up room.
   const entries = getRollLog();
-  if (entries.length === 0) {
-    list.appendChild(el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
-  } else {
-    // Oldest first, newest at the bottom — like a chat log. The array is already stored in that
-    // order (append + shift-trim off the front), so no reordering needed for display; just keep
-    // the list scrolled to the bottom (below) so the newest roll is what's actually in view.
-    entries.forEach((entry) => {
-      const row = el("div", { class: "roll-log-entry" });
-      const [d1, d2] = entry.dice || [0, 0];
+  const lastEntry = entries.length ? entries[entries.length - 1] : null;
+  const olderEntries = entries.slice(0, -1);
 
-      const topLine = el("div", { class: "roll-log-entry-top" });
-      topLine.appendChild(
-        el("span", {
-          class: "roll-log-entry-name",
-          style: "color: " + colorForCharacterId(entry.characterId),
-          text: (entry.characterName || "") + ":",
-        })
-      );
-      if (entry.timestamp) {
-        topLine.appendChild(
-          el("span", {
-            class: "roll-log-entry-time",
-            text: new Date(entry.timestamp).toLocaleTimeString(lang === "it" ? "it-IT" : "en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-          })
-        );
-      }
-      row.appendChild(topLine);
-
-      const mathLine = el("div", { class: "roll-log-entry-math" });
-      mathLine.appendChild(el("span", { text: `2d6 (${d1}+${d2}) + ` }));
-      // Bold, plain black — see .roll-log-power-value in style.css for why this isn't
-      // accent-colored like the sheet's own Total Power chip.
-      mathLine.appendChild(el("span", { class: "roll-log-power-value", text: String(entry.power) }));
-      mathLine.appendChild(el("span", { text: " = " }));
-      const outcome = rollOutcome(entry.total);
-      mathLine.appendChild(
-        el("span", {
-          class: "roll-log-total roll-log-total-" + outcome,
-          title: t("rollOutcome" + outcome[0].toUpperCase() + outcome.slice(1)),
-          text: String(entry.total),
-        })
-      );
-      row.appendChild(mathLine);
-
-      list.appendChild(row);
+  const lastBlock = el("div", { class: "roll-log-last" });
+  const lastHeader = el("div", { class: "roll-log-last-header" });
+  lastHeader.appendChild(el("span", { class: "roll-log-section-title", text: t("lastRollTitle") }));
+  if (olderEntries.length > 0) {
+    const historyBtn = el("button", {
+      class: "icon-btn-round roll-log-history-btn" + (rollLogHistoryExpanded ? " active" : ""),
+      title: rollLogHistoryExpanded ? t("hideHistoryTitle") : t("showHistoryTitle"),
+      "aria-label": rollLogHistoryExpanded ? t("hideHistoryTitle") : t("showHistoryTitle"),
+      onclick: () => {
+        rollLogHistoryExpanded = !rollLogHistoryExpanded;
+        setRollLogPopoverSize(rollLogExpanded);
+        if (isRollLogView) renderApp();
+        else refreshRollLogWidget();
+      },
     });
+    historyBtn.appendChild(clockIcon());
+    lastHeader.appendChild(historyBtn);
   }
-  panel.appendChild(list);
+  lastBlock.appendChild(lastHeader);
+  lastBlock.appendChild(lastEntry ? buildRollLogEntryRow(lastEntry) : el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
+  panel.appendChild(lastBlock);
+
+  let historyList = null;
+  if (rollLogHistoryExpanded && olderEntries.length > 0) {
+    historyList = el("div", { class: "roll-log-history" });
+    // Oldest first, most-recently-older at the bottom — same chat-log convention as the old
+    // single list, just excluding the entry already shown in "Last Roll" above.
+    olderEntries.forEach((entry) => historyList.appendChild(buildRollLogEntryRow(entry)));
+    panel.appendChild(historyList);
+  }
   widget.appendChild(panel);
 
-  // Keep the newest roll (now at the bottom) in view. Deferred a frame: `list` isn't laid out
-  // yet — scrollHeight on a still-detached node reads 0 — and every call site attaches `widget`
-  // to the document synchronously right after this function returns, so by the next frame it has
-  // real layout to scroll against.
-  requestAnimationFrame(() => {
-    list.scrollTop = list.scrollHeight;
-  });
+  if (historyList) {
+    // Keep the most-recently-older roll in view by default. Deferred a frame: the list isn't laid
+    // out yet — scrollHeight on a still-detached node reads 0 — and every call site attaches
+    // `widget` to the document synchronously right after this function returns, so by the next
+    // frame it has real layout to scroll against.
+    requestAnimationFrame(() => {
+      historyList.scrollTop = historyList.scrollHeight;
+    });
+  }
 
   return widget;
 }
@@ -3485,19 +3559,6 @@ async function computeRollLogExtraLift() {
   }
 }
 
-// Half the real game-window WIDTH, per explicit request — how tall the Scene Tags block (see
-// rollLogSceneExtraHeight) is allowed to grow before it scrolls internally. Same
-// round-trip-to-the-host-page caveat as computeRollLogExtraLift above, so the same try/catch
-// fallback shape.
-async function computeRollLogSceneMaxHeight() {
-  try {
-    const w = await OBR.viewport.getWidth();
-    return Math.round(w * 0.5);
-  } catch (e) {
-    return 180;
-  }
-}
-
 // ---------- boot ----------
 
 async function boot() {
@@ -3509,7 +3570,6 @@ async function boot() {
     selfRole = await OBR.player.getRole();
 
     rollLogExtraLift = await computeRollLogExtraLift();
-    rollLogSceneMaxHeight = await computeRollLogSceneMaxHeight();
     if (isRollLogView) {
       // Overrides body.roll-log-view's static padding-bottom in style.css (which stays as the
       // sensible fallback for the brief instant before this resolves) now that the real,
@@ -3582,8 +3642,6 @@ async function boot() {
     selfId = "local";
     selfName = lang === "it" ? "Anteprima locale" : "Local preview";
     selfRole = "PLAYER";
-    // No OBR.viewport here — the browser's own window stands in for "the game window" outside Owlbear.
-    rollLogSceneMaxHeight = Math.round(window.innerWidth * 0.5);
   }
 
   await loadRoomMeta();
