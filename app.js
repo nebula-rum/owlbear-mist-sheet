@@ -3480,18 +3480,9 @@ function renderRollLogPanel() {
   });
   muteBtn.appendChild(rollSoundMuted ? soundOffIcon() : soundOnIcon());
   headerBtns.appendChild(muteBtn);
-  // Clearing wipes the log for the whole table, not just the viewer's own copy — GM only, same
-  // UI-level gating (not an OBR-enforced permission) as every other GM-only control in this app.
-  if (isGM()) {
-    const clearBtn = el("button", {
-      class: "icon-btn-round roll-log-clear-btn",
-      title: t("clearRollLogTitle"),
-      "aria-label": t("clearRollLogTitle"),
-      onclick: () => showConfirmDialog(t("clearRollLogConfirm"), () => clearRollLog()),
-    });
-    clearBtn.appendChild(trashIcon());
-    headerBtns.appendChild(clearBtn);
-  }
+  // Clear moved to the Last Roll subheader (see lastHeader below) — it only ever deletes the ROLL
+  // history, not Scene Tags or anything else in this widget, so it reads more clearly sitting
+  // right next to the History toggle than in this generic top header.
   const collapseBtn = el("button", {
     class: "icon-btn-round",
     title: t("collapseRollLogTitle"),
@@ -3573,6 +3564,21 @@ function renderRollLogPanel() {
   const lastBlock = el("div", { class: "roll-log-last" });
   const lastHeader = el("div", { class: "roll-log-subheader roll-log-last-header" });
   lastHeader.appendChild(el("span", { class: "roll-log-section-title", text: t("lastRollTitle") }));
+  const lastHeaderBtns = el("div", { class: "roll-log-subheader-btns" });
+  // Clearing wipes the log for the whole table, not just the viewer's own copy — GM only, same
+  // UI-level gating (not an OBR-enforced permission) as every other GM-only control in this app.
+  // Lives here (not the main header above) since it only ever deletes roll history, same as the
+  // History toggle right next to it.
+  if (isGM() && entries.length > 0) {
+    const clearBtn = el("button", {
+      class: "icon-btn-round roll-log-clear-btn",
+      title: t("clearRollLogTitle"),
+      "aria-label": t("clearRollLogTitle"),
+      onclick: () => showConfirmDialog(t("clearRollLogConfirm"), () => clearRollLog()),
+    });
+    clearBtn.appendChild(trashIcon());
+    lastHeaderBtns.appendChild(clearBtn);
+  }
   if (olderEntries.length > 0) {
     const historyBtn = el("button", {
       class: "icon-btn-round roll-log-history-btn" + (rollLogHistoryExpanded ? " active" : ""),
@@ -3585,8 +3591,9 @@ function renderRollLogPanel() {
       },
     });
     historyBtn.appendChild(clockIcon());
-    lastHeader.appendChild(historyBtn);
+    lastHeaderBtns.appendChild(historyBtn);
   }
+  lastHeader.appendChild(lastHeaderBtns);
   lastBlock.appendChild(lastHeader);
   const lastContent = el("div", { class: "roll-log-last-content" });
   lastContent.appendChild(lastEntry ? buildRollLogEntryRow(lastEntry) : el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));

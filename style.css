@@ -1449,6 +1449,12 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   padding: 6px 8px;
   border-radius: 6px;
 }
+/* Holds the Clear and History buttons together on the right of the Last Roll subheader — unlike
+   .roll-log-header-btns (the main dark header's own button group), no color override is needed
+   here since .icon-btn-round's own default styling (var(--ink-soft), a dark hover tint) already
+   suits this subheader's light background. */
+.roll-log-subheader-btns { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.roll-log-clear-btn,
 .roll-log-history-btn { width: 22px; height: 22px; }
 .roll-log-history-btn.active { background: var(--amber-soft); color: var(--ink); }
 
