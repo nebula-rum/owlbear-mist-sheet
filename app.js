@@ -3332,16 +3332,36 @@ function renderSettingsTab() {
 // fresh connection still starts as the small unobtrusive pill.
 let rollLogExpanded = isRollLogView && rollLogOpensExpanded;
 
+// Was previously called from a hand-picked set of event handlers (toggle expand/collapse, the
+// History button, the metadata-change listener) — easy to get right for the cases anyone thought
+// to test, but just as easy to silently miss a case, and this codebase's own history has already
+// hit that exact shape of bug once for a sibling feature (the scroll-to-bottom timing fix a few
+// passes back). A GM adding Story Tags from a different window while a player's popover sits
+// already expanded is exactly the kind of path that's hard to manually verify without a live
+// second client, so instead of trusting each call site to remember, renderRollLogPanel() below now
+// calls this UNCONDITIONALLY on every single render, expanded or collapsed — the popover's real
+// size gets reconciled to match current content every time this page draws anything, with no
+// per-trigger bookkeeping required at all, so a missed trigger simply can't happen by construction.
+//
+// The second, delayed call is a deliberate belt-and-suspenders: OBR.popover.setWidth/setHeight is
+// a real message to the host page, and this app has no way to confirm from in here that Owlbear
+// actually applied a given call (there's no read-back API) — a short re-assert catches the case
+// where an immediate call landed while the host was still mid-update from whatever triggered this
+// render and didn't take.
 function setRollLogPopoverSize(expanded) {
   if (backend !== "obr") return; // standalone's embedded overlay just resizes itself via CSS
   const size = expanded ? rollLogExpandedSize() : rollLogCollapsedSize();
   OBR.popover.setWidth(ROLL_LOG_POPOVER_ID, size.width);
   OBR.popover.setHeight(ROLL_LOG_POPOVER_ID, size.height);
+  setTimeout(() => {
+    const retry = expanded ? rollLogExpandedSize() : rollLogCollapsedSize();
+    OBR.popover.setWidth(ROLL_LOG_POPOVER_ID, retry.width);
+    OBR.popover.setHeight(ROLL_LOG_POPOVER_ID, retry.height);
+  }, 400);
 }
 
 function toggleRollLogExpanded() {
   rollLogExpanded = !rollLogExpanded;
-  setRollLogPopoverSize(rollLogExpanded);
   if (isRollLogView) renderApp();
   else refreshRollLogWidget();
 }
@@ -3410,6 +3430,10 @@ function updateRollLogSceneMaxHeightVar() {
 
 function renderRollLogPanel() {
   updateRollLogSceneMaxHeightVar();
+  // See setRollLogPopoverSize()'s own comment: called unconditionally on every render (not from
+  // scattered event handlers) so the real popover box always gets reconciled to whatever this
+  // render actually needs, with no per-trigger bookkeeping to get wrong or forget.
+  setRollLogPopoverSize(rollLogExpanded);
   const widget = el("div", {
     id: "roll-log-widget",
     class:
@@ -3551,7 +3575,6 @@ function renderRollLogPanel() {
       "aria-label": rollLogHistoryExpanded ? t("hideHistoryTitle") : t("showHistoryTitle"),
       onclick: () => {
         rollLogHistoryExpanded = !rollLogHistoryExpanded;
-        setRollLogPopoverSize(rollLogExpanded);
         if (isRollLogView) renderApp();
         else refreshRollLogWidget();
       },
@@ -3578,11 +3601,10 @@ function renderRollLogPanel() {
   if (historyList) {
     // Keep the most-recently-older roll in view by default. Deferred TWO frames, not one: the
     // list isn't laid out at all right after this function returns (scrollHeight on a still-
-    // detached node reads 0), and one frame isn't reliably enough further when this render was
-    // triggered by something that ALSO just resized the popover itself (expanding it, or toggling
-    // History, both call setRollLogPopoverSize() around the same render) — the same class of bug
-    // already fixed once in this codebase's history for this exact scroll-to-bottom call, by
-    // nesting a second requestAnimationFrame so the measurement happens after that resize's own
+    // detached node reads 0), and one frame isn't reliably enough further since this same render
+    // ALSO just called setRollLogPopoverSize() above, resizing the popover itself — the same class
+    // of bug already fixed once in this codebase's history for this exact scroll-to-bottom call,
+    // by nesting a second requestAnimationFrame so the measurement happens after that resize's own
     // layout has fully settled, not mid-transition.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -3688,12 +3710,11 @@ async function boot() {
         // above. roomMeta is already up to date; the visual refresh just waits until they blur.
         pendingRenderAfterEdit = true;
       } else {
-        renderApp();
         // A GM editing Story Tags/Statuses on the Scene tab (a different window entirely) can
-        // change how many exist — re-ask the popover for its ideal size now that renderApp() has
-        // rebuilt this page's own panel with the new count, so it keeps growing/shrinking to fit
-        // every item with no scrolling (see rollLogSceneExtraHeight()). No-op while collapsed.
-        if (isRollLogView && rollLogExpanded) setRollLogPopoverSize(true);
+        // change how many exist — renderApp() rebuilds this page's own panel with the new count,
+        // and renderRollLogPanel() itself re-asks the popover for its ideal size on every render
+        // (see setRollLogPopoverSize()'s own comment), so no separate resize call is needed here.
+        renderApp();
       }
       // Someone (possibly this same client, echoing its own save) just changed room metadata —
       // if the roll log's last entry is one we haven't announced yet, a roll genuinely happened
