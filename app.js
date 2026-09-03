@@ -116,10 +116,15 @@ function rollLogSceneExtraHeight() {
   return Math.min(rollLogSceneMaxHeight, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
 }
 // The panel's own target height, NOT counting rollLogBottomClearance() (that's separate page
-// padding below the panel, not part of its box) — exposed live as a CSS custom property (see
-// updateRollLogSizeVars(), called from renderRollLogPanel()) so .roll-log-panel's own safety-net
-// max-height in style.css tracks this exact number instead of an independently-hardcoded one that
-// can fall out of sync with what's actually being asked for.
+// padding below the panel, not part of its box) — used ONLY to decide how tall a popover box to
+// ask Owlbear for (rollLogExpandedSize() below), not as a source of visual truth for CSS anymore.
+// An earlier version also published this as a CSS custom property so .roll-log-panel's own
+// max-height could track it exactly — that assumed Owlbear always honors the requested height
+// precisely, which doesn't hold up in a real room (the granted popover box can come back shorter,
+// or larger, than asked for reasons outside this app's control). CSS now trusts the popover's own
+// real rendered size directly (100vh/50vh units, see .roll-log-panel/.roll-log-scene in style.css)
+// instead of a JS pre-estimate — this JS number only needs to be a reasonable ballpark for the
+// initial request, not pixel-perfect.
 function rollLogPanelTargetHeight() {
   return rollLogOtherHeight() + rollLogSceneExtraHeight();
 }
@@ -285,6 +290,7 @@ const LABELS = {
     lastRollTitle: "Last Roll",
     showHistoryTitle: "Show roll history",
     hideHistoryTitle: "Hide roll history",
+    moreSceneTagsTitle: "More Scene Tags below — scroll to see them",
     rollLogEmpty: "No rolls yet.",
     clearRollLogTitle: "Clear roll history",
     clearRollLogConfirm: "Clear the roll history for everyone? This can't be undone.",
@@ -440,6 +446,7 @@ const LABELS = {
     lastRollTitle: "Ultimo Tiro",
     showHistoryTitle: "Mostra la cronologia dei tiri",
     hideHistoryTitle: "Nascondi la cronologia dei tiri",
+    moreSceneTagsTitle: "Altri Attributi di Scena più sotto — scorri per vederli",
     rollLogEmpty: "Nessun tiro ancora.",
     clearRollLogTitle: "Cancella la cronologia dei tiri",
     clearRollLogConfirm: "Cancellare la cronologia dei tiri per tutti? Non può essere annullato.",
@@ -799,6 +806,14 @@ function clockIcon() {
     ],
     { size: 14, strokeWidth: 2.2 }
   );
+}
+
+// A single down chevron — the Scene Tags "more below, scroll for it" indicator. Deliberately a
+// single chevron, not chevronsDownIcon()'s double one (already used elsewhere for a "show more"
+// button), since this isn't a button at all — just a passive hint, and reusing that exact shape
+// for a non-interactive element risked reading as another clickable "show more" affordance.
+function chevronDownIcon() {
+  return svgIcon([["polyline", { points: "5 8 12 15 19 8" }]], { size: 13, strokeWidth: 2.2 });
 }
 
 // Single counter-clockwise arrow — the Total Power "Reset" button (distinct from flipIcon's
@@ -3328,16 +3343,6 @@ function refreshRollLogWidget() {
   existing.replaceWith(renderRollLogPanel());
 }
 
-// Keeps .roll-log-panel's/.roll-log-scene's own CSS max-height rules (style.css) in lockstep with
-// what this render actually needs, instead of an independently-hardcoded number that can silently
-// fall out of sync the moment Story Tag count changes — see rollLogPanelTargetHeight()'s comment
-// for the bug that caused. Runs on every render (both backends, expanded or not) since it's cheap
-// and this is the one place guaranteed to fire whenever the numbers it publishes could have moved.
-function updateRollLogSizeVars() {
-  document.body.style.setProperty("--roll-log-panel-target-height", rollLogPanelTargetHeight() + "px");
-  document.body.style.setProperty("--roll-log-scene-max-height", rollLogSceneMaxHeight + "px");
-}
-
 // One roll's row — shared between the "Last Roll" block (just the newest one) and the History
 // list (everything older), so the two stay visually identical.
 function buildRollLogEntryRow(entry) {
@@ -3384,7 +3389,6 @@ function buildRollLogEntryRow(entry) {
 }
 
 function renderRollLogPanel() {
-  updateRollLogSizeVars();
   const widget = el("div", {
     id: "roll-log-widget",
     class:
@@ -3463,15 +3467,27 @@ function renderRollLogPanel() {
   // expanded) — past that cap the block itself scrolls (see its CSS) rather than continuing to
   // grow and pushing the Last Roll/History block below it off the panel.
   const storyTags = getStoryTags();
+  let sceneContent = null; // measured after mount below, to show/hide sceneOverflowIcon
+  let sceneOverflowIcon = null;
   if (storyTags.tags.length > 0 || storyTags.statuses.length > 0) {
     const campaign = getCampaign();
     const tagColorClass = "color-" + campaign.storyTagColor;
     const statusColorClass = "color-" + campaign.storyStatusColor;
     const sceneBlock = el("div", { class: "roll-log-scene" });
+    // Purely informational, not a button — lets a player know there are more Story Tags below
+    // than currently fit, without them having to notice a thin scrollbar on their own. Shown/hidden
+    // by actually measuring the rendered content after mount (see the requestAnimationFrame below)
+    // rather than pre-computed from the tag count, since the real available height depends on
+    // whatever popover box Owlbear actually granted — not something this app can predict exactly.
+    sceneOverflowIcon = el("span", { class: "roll-log-scene-overflow-indicator", title: t("moreSceneTagsTitle") });
+    sceneOverflowIcon.appendChild(chevronDownIcon());
     sceneBlock.appendChild(
-      el("div", { class: "roll-log-subheader" }, [el("span", { class: "roll-log-section-title", text: t("sceneTagsTitle") })])
+      el("div", { class: "roll-log-subheader" }, [
+        el("span", { class: "roll-log-section-title", text: t("sceneTagsTitle") }),
+        sceneOverflowIcon,
+      ])
     );
-    const sceneContent = el("div", { class: "roll-log-scene-content" });
+    sceneContent = el("div", { class: "roll-log-scene-content" });
     const sceneList = el("div", { class: "roll-log-scene-list" });
     storyTags.tags.forEach((tag) => {
       sceneList.appendChild(
@@ -3539,12 +3555,26 @@ function renderRollLogPanel() {
   widget.appendChild(panel);
 
   if (historyList) {
-    // Keep the most-recently-older roll in view by default. Deferred a frame: the list isn't laid
-    // out yet — scrollHeight on a still-detached node reads 0 — and every call site attaches
-    // `widget` to the document synchronously right after this function returns, so by the next
-    // frame it has real layout to scroll against.
+    // Keep the most-recently-older roll in view by default. Deferred TWO frames, not one: the
+    // list isn't laid out at all right after this function returns (scrollHeight on a still-
+    // detached node reads 0), and one frame isn't reliably enough further when this render was
+    // triggered by something that ALSO just resized the popover itself (expanding it, or toggling
+    // History, both call setRollLogPopoverSize() around the same render) — the same class of bug
+    // already fixed once in this codebase's history for this exact scroll-to-bottom call, by
+    // nesting a second requestAnimationFrame so the measurement happens after that resize's own
+    // layout has fully settled, not mid-transition.
     requestAnimationFrame(() => {
-      historyList.scrollTop = historyList.scrollHeight;
+      requestAnimationFrame(() => {
+        historyList.scrollTop = historyList.scrollHeight;
+      });
+    });
+  }
+  if (sceneContent && sceneOverflowIcon) {
+    // Same double-deferred reasoning as historyList above.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        sceneOverflowIcon.classList.toggle("visible", sceneContent.scrollHeight > sceneContent.clientHeight + 1);
+      });
     });
   }
 

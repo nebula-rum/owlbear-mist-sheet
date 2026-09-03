@@ -1324,27 +1324,19 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
      reliably renders at this size regardless of that chain. 322px = 280px + 15%, at the user's
      request for a wider roll-log panel. */
   width: 322px;
-  /* --roll-log-panel-target-height (set by updateRollLogSizeVars() in app.js, every render) is
-     exactly what rollLogExpandedSize() is currently asking Owlbear's OBR.popover.setHeight for —
-     used here instead of a hardcoded design height so this rule can never fall out of sync with
-     that number the way a literal 340px did the moment Story Tags started growing the panel (see
-     rollLogPanelTargetHeight()'s own comment in app.js for the bug that caused: the popover box
-     kept growing to fit them, but this rule still capped the visible panel at a flat 340px,
-     clipping the roll registry below it off the bottom).
-     Still only ever a wish, not a guarantee — it assumes Owlbear actually granted the popover box
-     that exact height, and in practice that box can come back shorter (a smaller game window, a
-     screen where the requested height just doesn't fit). When that happens, the panel still
-     renders at its full target height and this page's own bottom/right-aligned flexbox (see
-     body.roll-log-view above) does what it's told: pins the panel's BOTTOM edge in place and lets
-     the excess spill past whichever edge of the popover's actual box is tightest — visible as the
-     panel's own top or bottom edge, rounded corners included, being sliced off by the real iframe
-     boundary rather than the list scrolling internally the way it's supposed to. Capping at
-     whichever is smaller — the target height, or 100% of the real viewport this page actually got
-     minus the same bottom clearance body already reserves and a small top margin — means the
-     panel can never ask for more room than truly exists; a shorter box just shows less of the
-     Scene Tags/History blocks before their own scrollbars kick in, instead of the panel's outer
-     shape (and its bounding box) getting clipped by Owlbear's real window. */
-  max-height: min(var(--roll-log-panel-target-height, 340px), calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px));
+  /* Trusts the popover's own REAL rendered viewport (100vh, inside this page/iframe) rather than a
+     JS-precomputed pixel guess — an earlier version capped this at a literal design height (later,
+     a CSS custom property fed by app.js's own height estimate) on the assumption that Owlbear
+     always grants the popover box exactly the height requested via OBR.popover.setHeight(). That
+     assumption doesn't hold in a real room: the granted box can come back a different size than
+     asked for, and whenever it did, this rule's hardcoded/estimated number stopped matching
+     reality — either clipping content that should have scrolled instead, or leaving the panel
+     smaller than it could actually be. 100vh has no such gap: it always reflects whatever height
+     this page truly has to work with right now, so Scene Tags/History (see their own max-heights)
+     can size themselves correctly against it with no dependency on the JS estimate being exact —
+     that estimate still exists (rollLogExpandedSize() in app.js) but now only has to be a
+     reasonable ballpark for the initial popover request, not pixel-perfect. */
+  max-height: calc(100vh - var(--roll-log-bottom-clearance, 56px) - 8px);
   display: flex;
   flex-direction: column;
   background: var(--parchment);
@@ -1377,16 +1369,21 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 }
 .roll-log-header-btns .icon-btn-round:hover { background: rgba(242,230,201,0.22); }
 
-/* A soft, full-width title strip shared by every section below the main dark "Scena" header —
-   much lighter than that header's ink gradient, but still a clearly distinct band from the plain
-   parchment body so each section reads as its own zone at a glance. */
+/* A soft title strip shared by every section below the main dark "Scena" header — darker than the
+   plain parchment body so each section reads as its own clearly distinct zone, but nowhere near as
+   heavy as that header's solid ink gradient. A fixed height (not just padding) so this reads
+   identically for every section regardless of what happens to sit on its right side — Last Roll's
+   History button only exists once there's older history to show, and without a fixed height that
+   button's presence/absence very slightly changed this strip's height between sections. */
 .roll-log-subheader {
+  height: 32px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  padding: 5px 10px;
-  background: rgba(58,44,28,0.07);
+  padding: 0 10px;
+  background: rgba(58,44,28,0.14);
   border-bottom: 1px solid var(--border-soft);
 }
 .roll-log-section-title {
@@ -1396,25 +1393,29 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
   text-transform: uppercase;
   color: var(--ink-soft);
 }
+/* Purely informational (see sceneOverflowIcon in app.js) — hidden until actually measured to
+   overflow, shown via the .visible class rather than existing conditionally so this side of the
+   subheader never causes a layout shift when it appears/disappears. */
+.roll-log-scene-overflow-indicator { display: none; color: var(--ink-soft); }
+.roll-log-scene-overflow-indicator.visible { display: flex; }
 
 /* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
    renderRollLogPanel) — "the heart of gameplay" per the user, so it gets first claim on the
-   panel's space and the most generous cap of the three sections below the main header. Grows to
-   show every current item at once (see rollLogSceneExtraHeight() in app.js, re-asked for live via
-   OBR.room.onMetadataChange whenever the count changes) up to --roll-log-scene-max-height — half
-   the real game-window HEIGHT, computed once at boot (rollLogSceneMaxHeight in app.js) — past
-   which .roll-log-scene-content scrolls internally instead of continuing to grow. A subheader (see
-   .roll-log-subheader above) stays fixed via flex-shrink:0 while just the content below scrolls,
-   which is why the max-height/overflow live on .roll-log-scene-content rather than this outer
-   wrapper — that keeps the "Scene Tags" title always visible even when its own list is scrolled.
-   flex-shrink on this OUTER wrapper stays at default (1, i.e. NOT 0) so that on a real screen too
-   short to fit everything at once, this whole block is the one that gives way — .roll-log-last
-   below has flex-shrink:0 (see its own comment) so the one thing the user said always matters
-   ("typically only the last roll really matters") never gets squeezed. */
+   panel's space and the most generous cap of the three sections below the main header. Grows from
+   nothing as tags are added, up to half of the popover's own real rendered height (50vh — see
+   .roll-log-panel's own comment for why this trusts the real viewport instead of a JS estimate)
+   — past that .roll-log-scene-content scrolls internally instead of continuing to grow. The
+   subheader (see .roll-log-subheader above) stays fixed via flex-shrink:0 while just the content
+   below scrolls, which is why the max-height/overflow live on .roll-log-scene-content rather than
+   this outer wrapper — that keeps the "Scene Tags" title always visible even when its own list is
+   scrolled. flex-shrink on this OUTER wrapper stays at default (1, i.e. NOT 0) so that on a real
+   screen too short to fit everything at once, this whole block is the one that gives way —
+   .roll-log-last below has flex-shrink:0 (see its own comment) so the one thing the user said
+   always matters ("typically only the last roll really matters") never gets squeezed. */
 .roll-log-scene {
   display: flex;
   flex-direction: column;
-  max-height: var(--roll-log-scene-max-height, 260px);
+  max-height: 50vh;
   overflow: hidden;
   border-bottom: 1px solid var(--border-soft);
 }
