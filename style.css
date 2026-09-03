@@ -1402,20 +1402,24 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
 /* Read-only glance at the current Story Tags/Statuses (see the storyTags block in
    renderRollLogPanel) — "the heart of gameplay" per the user, so it gets first claim on the
    panel's space and the most generous cap of the three sections below the main header. Grows from
-   nothing as tags are added, up to half of the popover's own real rendered height (50vh — see
-   .roll-log-panel's own comment for why this trusts the real viewport instead of a JS estimate)
-   — past that .roll-log-scene-content scrolls internally instead of continuing to grow. The
-   subheader (see .roll-log-subheader above) stays fixed via flex-shrink:0 while just the content
-   below scrolls, which is why the max-height/overflow live on .roll-log-scene-content rather than
-   this outer wrapper — that keeps the "Scene Tags" title always visible even when its own list is
-   scrolled. flex-shrink on this OUTER wrapper stays at default (1, i.e. NOT 0) so that on a real
-   screen too short to fit everything at once, this whole block is the one that gives way —
-   .roll-log-last below has flex-shrink:0 (see its own comment) so the one thing the user said
-   always matters ("typically only the last roll really matters") never gets squeezed. */
+   nothing as tags are added, up to --roll-log-scene-max-height (an absolute px value computed
+   from the real game-window height — see rollLogSceneMaxHeight's own long comment in app.js for
+   why this is deliberately NOT a plain vh unit the way .roll-log-panel below is: the popover's own
+   box is normally smaller than the full screen, so `50vh` here would measure "half of a box
+   that's already smaller than the screen" and always undershoot what the user actually means by
+   "half the screen") — past that cap .roll-log-scene-content scrolls internally instead of
+   continuing to grow. The subheader (see .roll-log-subheader above) stays fixed via flex-shrink:0
+   while just the content below scrolls, which is why the max-height/overflow live on
+   .roll-log-scene-content rather than this outer wrapper — that keeps the "Scene Tags" title
+   always visible even when its own list is scrolled. flex-shrink on this OUTER wrapper stays at
+   default (1, i.e. NOT 0) so that on a real screen too short to fit everything at once, this whole
+   block is the one that gives way — .roll-log-last below has flex-shrink:0 (see its own comment)
+   so the one thing the user said always matters ("typically only the last roll really matters")
+   never gets squeezed. */
 .roll-log-scene {
   display: flex;
   flex-direction: column;
-  max-height: 50vh;
+  max-height: var(--roll-log-scene-max-height, 300px);
   overflow: hidden;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -1436,6 +1440,15 @@ body.roll-log-view #app { padding-bottom: 0; min-height: 0; }
    of that guarantee. */
 .roll-log-last { flex-shrink: 0; display: flex; flex-direction: column; }
 .roll-log-last-content { padding: 8px 10px; }
+/* A highlighted chip, not just a plain row — so once History is open and a whole list of
+   near-identical-looking rolls sits right next to it, this one still visually pops as THE current
+   roll rather than blending into the list. */
+.roll-log-last-content .roll-log-entry {
+  background: var(--amber-soft);
+  border-bottom: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
 .roll-log-history-btn { width: 22px; height: 22px; }
 .roll-log-history-btn.active { background: var(--amber-soft); color: var(--ink); }
 

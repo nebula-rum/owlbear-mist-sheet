@@ -96,16 +96,28 @@ function rollLogOtherHeight() {
   return ROLL_LOG_HEADER_HEIGHT + ROLL_LOG_LAST_SECTION_HEIGHT + rollLogHistoryExtraHeight();
 }
 
-// Half the real game-window HEIGHT, per explicit request — how tall the Scene Tags block is
-// allowed to grow (from 0, as tags are added, auto-updating) before it scrolls internally instead
-// of continuing to grow. Computed once at boot (see boot()'s viewportHeight fetch, shared with
-// rollLogExtraLift above) since it needs an actual OBR.viewport.getHeight() round trip. An earlier
-// version derived this cap from the rest of the panel's OWN height instead of the real screen —
-// that seemed clever (it made "half the panel" self-enforcing) but was wrong in practice: with a
-// small Last Roll block and no History open, "the rest of the panel" is tiny, so the cap ended up
-// far smaller than the user's actual intent (half the SCREEN), causing a scrollbar to appear with
-// only a handful of tags.
-let rollLogSceneMaxHeight = 260; // sensible default for the instant before boot() resolves the real height
+// How tall the Scene Tags block is allowed to grow (from 0, as tags are added, auto-updating)
+// before it scrolls internally instead of continuing to grow — ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION
+// (57.5%, i.e. the requested half plus the user's later +15% bump) of the real game-window HEIGHT.
+// Computed once at boot (see boot()'s viewportHeight fetch, shared with rollLogExtraLift above)
+// since it needs an actual OBR.viewport.getHeight() round trip, and published as a CSS custom
+// property (see updateRollLogSceneMaxHeightVar(), called from renderRollLogPanel()) rather than
+// expressed as a plain vh unit in CSS — deliberately NOT the same "trust the real rendered
+// viewport" approach .roll-log-panel takes just below (100vh there). The distinction matters: the
+// POPOVER's own box is not the same thing as "the screen" — it's normally smaller, since it only
+// ever gets requested tall enough to hold header + Last Roll + Scene Tags, not the whole game
+// window. A plain `50vh` in CSS would measure against that SMALLER popover box, so Scene Tags
+// would always render shorter than intended and scroll before actually reaching what the user
+// means by "half the screen." An absolute px value computed straight from the real screen height
+// sidesteps that entirely — this is a case where trusting a JS estimate is *more* correct than
+// trusting the rendered viewport, the opposite of .roll-log-panel's reasoning below.
+//
+// Two earlier versions got this wrong in opposite directions: one derived the cap from the rest of
+// the panel's OWN height (self-referential — but with a small Last Roll block and no History open,
+// "the rest of the panel" is tiny, so tags scrolled with almost none showing); the other used
+// plain `50vh` (see above — always undershoots because the popover is smaller than the screen).
+const ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION = 0.575;
+let rollLogSceneMaxHeight = 300; // sensible default for the instant before boot() resolves the real height
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
@@ -3388,7 +3400,16 @@ function buildRollLogEntryRow(entry) {
   return row;
 }
 
+// Publishes rollLogSceneMaxHeight (see its own comment for why this is an absolute px value, not
+// a plain vh unit like .roll-log-panel uses) as a CSS custom property so .roll-log-scene's own
+// max-height can reference it. Runs on every render since it's cheap and this is the one place
+// guaranteed to fire whenever the panel is (re)built.
+function updateRollLogSceneMaxHeightVar() {
+  document.body.style.setProperty("--roll-log-scene-max-height", rollLogSceneMaxHeight + "px");
+}
+
 function renderRollLogPanel() {
+  updateRollLogSceneMaxHeightVar();
   const widget = el("div", {
     id: "roll-log-widget",
     class:
@@ -3594,15 +3615,16 @@ async function computeRollLogExtraLift() {
   }
 }
 
-// Half the real game-window HEIGHT — how tall the Scene Tags block (see rollLogSceneExtraHeight)
-// is allowed to grow before it scrolls internally. Same round-trip-to-the-host-page caveat as
-// computeRollLogExtraLift above, so the same try/catch fallback shape.
+// ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION of the real game-window HEIGHT — how tall the Scene Tags
+// block (see rollLogSceneExtraHeight) is allowed to grow before it scrolls internally. Same
+// round-trip-to-the-host-page caveat as computeRollLogExtraLift above, so the same try/catch
+// fallback shape.
 async function computeRollLogSceneMaxHeight() {
   try {
     const h = await OBR.viewport.getHeight();
-    return Math.round(h * 0.5);
+    return Math.round(h * ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION);
   } catch (e) {
-    return 260;
+    return 300;
   }
 }
 
@@ -3691,7 +3713,7 @@ async function boot() {
     selfName = lang === "it" ? "Anteprima locale" : "Local preview";
     selfRole = "PLAYER";
     // No OBR.viewport here — the browser's own window stands in for "the game window" outside Owlbear.
-    rollLogSceneMaxHeight = Math.round(window.innerHeight * 0.5);
+    rollLogSceneMaxHeight = Math.round(window.innerHeight * ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION);
   }
 
   await loadRoomMeta();
