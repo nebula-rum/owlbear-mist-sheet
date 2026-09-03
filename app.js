@@ -118,14 +118,19 @@ function rollLogOtherHeight() {
 // plain `50vh` (see above — always undershoots because the popover is smaller than the screen).
 const ROLL_LOG_SCENE_MAX_HEIGHT_FRACTION = 0.575;
 let rollLogSceneMaxHeight = 300; // sensible default for the instant before boot() resolves the real height
+// Deliberately NOT min(cap, estimatedContentNeed) — an earlier version tried to be "efficient" by
+// only requesting as much popover height as a hand-guessed per-row pixel size said N tags needed,
+// but that guess doesn't have to match the real rendered row height in an actual room (different
+// font-size setting, line-height, whatever) — and if it undershoots even slightly, Owlbear grants
+// a box too small to fit even a handful of tags without scrolling, while the (correctly computed,
+// generous) cap sits unused above it. Requesting the FULL cap outright the moment any tag exists
+// sidesteps the guessing entirely: the box always has as much room as this app is ever going to
+// ask for, and whether a scrollbar actually appears is decided by real rendered measurement (see
+// sceneOverflowIcon in renderRollLogPanel), not a pixel estimate baked in here.
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
-  if (count === 0) return 0;
-  const SCENE_HEADER_HEIGHT = 28; // .roll-log-subheader (the "Scene Tags" title bar)
-  const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
-  const SCENE_BLOCK_PADDING = 8; // .roll-log-scene-content's own top/bottom padding
-  return Math.min(rollLogSceneMaxHeight, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
+  return count === 0 ? 0 : rollLogSceneMaxHeight;
 }
 // The panel's own target height, NOT counting rollLogBottomClearance() (that's separate page
 // padding below the panel, not part of its box) — used ONLY to decide how tall a popover box to
