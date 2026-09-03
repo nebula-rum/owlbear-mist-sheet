@@ -67,12 +67,11 @@ function rollLogCollapsedSize() {
 // 15% wider than the original 280/300 pair at the user's request.
 //
 // The panel is built from 3 stacked pieces — see renderRollLogPanel(): a fixed header, the Scene
-// Tags glance (grows with content, see rollLogSceneExtraHeight below), and a "Last Roll" block
-// (a small fixed-size header + just the single newest roll, with a History toggle that reveals the
-// rest as an extra scrollable block). Scene Tags are "the heart of gameplay" per the user, so they
-// get first claim on space; everything else here computes how much room the OTHER pieces need so
-// that claim can be expressed as "up to half the panel" without a circular fight over space (see
-// rollLogSceneExtraHeight's own comment for the exact math).
+// Tags glance (grows with content, see rollLogSceneExtraHeight below, up to half the real
+// game-window height), and a "Last Roll" block (a small fixed-size header + just the single
+// newest roll, with a History toggle that reveals the rest as an extra scrollable block). Scene
+// Tags are "the heart of gameplay" per the user, so they get first claim on space and the most
+// generous cap of the three.
 const ROLL_LOG_HEADER_HEIGHT = 48; // .roll-log-header, measured
 const ROLL_LOG_LAST_SECTION_HEIGHT = 92; // .roll-log-last: its own header row + one entry + padding, measured
 let rollLogHistoryExpanded = false; // per-viewer scratch UI state, not synced — same as rollLogExpanded
@@ -92,29 +91,29 @@ function rollLogHistoryExtraHeight() {
   return Math.min(ROLL_LOG_HISTORY_MAX_HEIGHT, count * ROLL_LOG_HISTORY_ROW_HEIGHT + ROLL_LOG_HISTORY_PADDING);
 }
 
-// Everything in the panel EXCEPT Scene Tags — this doubles as the Scene Tags cap itself (see
-// below), which is what makes "up to half the panel" work out arithmetically: if Scene Tags can
-// never be taller than everything else combined, then Scene Tags can never be more than half of
-// (Scene Tags + everything else) = half of the panel's total height.
+// Everything in the panel EXCEPT Scene Tags — used for the panel's total target height below.
 function rollLogOtherHeight() {
   return ROLL_LOG_HEADER_HEIGHT + ROLL_LOG_LAST_SECTION_HEIGHT + rollLogHistoryExtraHeight();
 }
 
-// Grows to fit every current Story Tag/Status instead of always scrolling, up to
-// rollLogOtherHeight() above (i.e. up to half the panel) — past that cap it scrolls internally
-// instead of continuing to grow. An earlier version of this used a flat/width-based cap instead,
-// which had a real problem: it let Scene Tags starve the roll history below it out of the panel
-// entirely. Deriving the cap from the OTHER content's own height instead makes that structurally
-// impossible — Scene Tags literally cannot claim more room than the rest of the panel has, no
-// matter how many tags exist.
+// Half the real game-window HEIGHT, per explicit request — how tall the Scene Tags block is
+// allowed to grow (from 0, as tags are added, auto-updating) before it scrolls internally instead
+// of continuing to grow. Computed once at boot (see boot()'s viewportHeight fetch, shared with
+// rollLogExtraLift above) since it needs an actual OBR.viewport.getHeight() round trip. An earlier
+// version derived this cap from the rest of the panel's OWN height instead of the real screen —
+// that seemed clever (it made "half the panel" self-enforcing) but was wrong in practice: with a
+// small Last Roll block and no History open, "the rest of the panel" is tiny, so the cap ended up
+// far smaller than the user's actual intent (half the SCREEN), causing a scrollbar to appear with
+// only a handful of tags.
+let rollLogSceneMaxHeight = 260; // sensible default for the instant before boot() resolves the real height
 function rollLogSceneExtraHeight() {
   const storyTags = getStoryTags();
   const count = storyTags.tags.length + storyTags.statuses.length;
   if (count === 0) return 0;
-  const SCENE_HEADER_HEIGHT = 24; // .roll-log-scene-title + its margin
+  const SCENE_HEADER_HEIGHT = 28; // .roll-log-subheader (the "Scene Tags" title bar)
   const SCENE_ROW_HEIGHT = 28; // one compact chip/card row + its gap
-  const SCENE_BLOCK_PADDING = 12; // .roll-log-scene's own top/bottom padding + border
-  return Math.min(rollLogOtherHeight(), SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
+  const SCENE_BLOCK_PADDING = 8; // .roll-log-scene-content's own top/bottom padding
+  return Math.min(rollLogSceneMaxHeight, SCENE_HEADER_HEIGHT + count * SCENE_ROW_HEIGHT + SCENE_BLOCK_PADDING);
 }
 // The panel's own target height, NOT counting rollLogBottomClearance() (that's separate page
 // padding below the panel, not part of its box) — exposed live as a CSS custom property (see
@@ -3336,7 +3335,7 @@ function refreshRollLogWidget() {
 // and this is the one place guaranteed to fire whenever the numbers it publishes could have moved.
 function updateRollLogSizeVars() {
   document.body.style.setProperty("--roll-log-panel-target-height", rollLogPanelTargetHeight() + "px");
-  document.body.style.setProperty("--roll-log-scene-max-height", rollLogOtherHeight() + "px");
+  document.body.style.setProperty("--roll-log-scene-max-height", rollLogSceneMaxHeight + "px");
 }
 
 // One roll's row — shared between the "Last Roll" block (just the newest one) and the History
@@ -3469,7 +3468,10 @@ function renderRollLogPanel() {
     const tagColorClass = "color-" + campaign.storyTagColor;
     const statusColorClass = "color-" + campaign.storyStatusColor;
     const sceneBlock = el("div", { class: "roll-log-scene" });
-    sceneBlock.appendChild(el("div", { class: "roll-log-section-title", text: t("sceneTagsTitle") }));
+    sceneBlock.appendChild(
+      el("div", { class: "roll-log-subheader" }, [el("span", { class: "roll-log-section-title", text: t("sceneTagsTitle") })])
+    );
+    const sceneContent = el("div", { class: "roll-log-scene-content" });
     const sceneList = el("div", { class: "roll-log-scene-list" });
     storyTags.tags.forEach((tag) => {
       sceneList.appendChild(
@@ -3489,7 +3491,8 @@ function renderRollLogPanel() {
         ])
       );
     });
-    sceneBlock.appendChild(sceneList);
+    sceneContent.appendChild(sceneList);
+    sceneBlock.appendChild(sceneContent);
     panel.appendChild(sceneBlock);
   }
 
@@ -3502,7 +3505,7 @@ function renderRollLogPanel() {
   const olderEntries = entries.slice(0, -1);
 
   const lastBlock = el("div", { class: "roll-log-last" });
-  const lastHeader = el("div", { class: "roll-log-last-header" });
+  const lastHeader = el("div", { class: "roll-log-subheader roll-log-last-header" });
   lastHeader.appendChild(el("span", { class: "roll-log-section-title", text: t("lastRollTitle") }));
   if (olderEntries.length > 0) {
     const historyBtn = el("button", {
@@ -3520,7 +3523,9 @@ function renderRollLogPanel() {
     lastHeader.appendChild(historyBtn);
   }
   lastBlock.appendChild(lastHeader);
-  lastBlock.appendChild(lastEntry ? buildRollLogEntryRow(lastEntry) : el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
+  const lastContent = el("div", { class: "roll-log-last-content" });
+  lastContent.appendChild(lastEntry ? buildRollLogEntryRow(lastEntry) : el("div", { class: "roll-log-empty", text: t("rollLogEmpty") }));
+  lastBlock.appendChild(lastContent);
   panel.appendChild(lastBlock);
 
   let historyList = null;
@@ -3559,6 +3564,18 @@ async function computeRollLogExtraLift() {
   }
 }
 
+// Half the real game-window HEIGHT — how tall the Scene Tags block (see rollLogSceneExtraHeight)
+// is allowed to grow before it scrolls internally. Same round-trip-to-the-host-page caveat as
+// computeRollLogExtraLift above, so the same try/catch fallback shape.
+async function computeRollLogSceneMaxHeight() {
+  try {
+    const h = await OBR.viewport.getHeight();
+    return Math.round(h * 0.5);
+  } catch (e) {
+    return 260;
+  }
+}
+
 // ---------- boot ----------
 
 async function boot() {
@@ -3570,6 +3587,7 @@ async function boot() {
     selfRole = await OBR.player.getRole();
 
     rollLogExtraLift = await computeRollLogExtraLift();
+    rollLogSceneMaxHeight = await computeRollLogSceneMaxHeight();
     if (isRollLogView) {
       // Overrides body.roll-log-view's static padding-bottom in style.css (which stays as the
       // sensible fallback for the brief instant before this resolves) now that the real,
@@ -3642,6 +3660,8 @@ async function boot() {
     selfId = "local";
     selfName = lang === "it" ? "Anteprima locale" : "Local preview";
     selfRole = "PLAYER";
+    // No OBR.viewport here — the browser's own window stands in for "the game window" outside Owlbear.
+    rollLogSceneMaxHeight = Math.round(window.innerHeight * 0.5);
   }
 
   await loadRoomMeta();
