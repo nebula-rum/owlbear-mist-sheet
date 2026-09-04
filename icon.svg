@@ -1,6 +1,10 @@
 <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect x="5" y="3" width="22" height="26" rx="4" fill="none" stroke="currentColor" stroke-width="2"/>
-  <line x1="10" y1="22" x2="13" y2="9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
-  <line x1="15" y1="23" x2="17" y2="9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
-  <line x1="20" y1="22" x2="22" y2="9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+  <!-- Owlbear's toolbar renders extension icons as flat white line art and ignores stroke/fill
+       colors entirely (confirmed in owlbear-grimoire's icon.svg against a live screenshot) — so
+       this is hardcoded to that same near-white, not currentColor. Frame proportions
+       (rect 22x24, rx 2.5, stroke-width 2.4) also match grimoire's, for a consistent toolbar
+       silhouette across the nebula-rum extension family. -->
+  <rect x="5" y="5" width="22" height="24" rx="2.5" fill="none" stroke="#f2f1f6" stroke-width="2.4"/>
+  <circle cx="16" cy="13" r="3.1" fill="none" stroke="#f2f1f6" stroke-width="2.1"/>
+  <path d="M10 25.5 C10 18.7 12.6 16.6 16 16.6 C19.4 16.6 22 18.7 22 25.5" fill="none" stroke="#f2f1f6" stroke-width="2.1" stroke-linecap="round"/>
 </svg>
