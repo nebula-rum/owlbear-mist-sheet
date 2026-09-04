@@ -280,12 +280,14 @@ const LABELS = {
     accessLabel: "Visible to",
     accessGm: "GM only",
     accessEveryone: "Everyone",
+    lockToggleLock: "Locked — players can view but not edit. Click to unlock.",
+    lockToggleUnlock: "Unlocked — players with access can edit. Click to lock.",
+    lockedBanner: "Locked by your GM — you can view this sheet, but not edit it.",
     removeCharacter: "Remove character",
     removeCharacterConfirm: "Remove this character? This can't be undone.",
     expandCharacter: "▾ Open sheet",
     collapseCharacter: "▴ Close sheet",
 
-    mySheetPickerHint: "You have more than one character — choose which to view:",
     waitingForCharacter: "Your GM hasn't given you a character yet.",
 
     tickPowerTitle: "Count toward Total Power",
@@ -436,12 +438,14 @@ const LABELS = {
     accessLabel: "Visibile a",
     accessGm: "Solo Narratore",
     accessEveryone: "Tutti",
+    lockToggleLock: "Bloccato — i giocatori possono vedere ma non modificare. Clicca per sbloccare.",
+    lockToggleUnlock: "Sbloccato — i giocatori con accesso possono modificare. Clicca per bloccare.",
+    lockedBanner: "Bloccato dal tuo Narratore — puoi vedere questa scheda, ma non modificarla.",
     removeCharacter: "Rimuovi personaggio",
     removeCharacterConfirm: "Rimuovere questo personaggio? Non può essere annullato.",
     expandCharacter: "▾ Apri scheda",
     collapseCharacter: "▴ Chiudi scheda",
 
-    mySheetPickerHint: "Hai più di un personaggio — scegli quale visualizzare:",
     waitingForCharacter: "Il tuo Narratore non ti ha ancora assegnato un personaggio.",
 
     tickPowerTitle: "Conta per il Potere Totale",
@@ -924,6 +928,20 @@ function bookIcon() {
       ["path", { d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" }],
     ],
     { size: 15, strokeWidth: 2 }
+  );
+}
+
+// A padlock, shackle open or closed depending on state — the Roster's per-character lock toggle,
+// and the banner shown to a player looking at a sheet the GM has locked.
+function lockIcon(locked) {
+  return svgIcon(
+    [
+      ["rect", { x: "5", y: "11", width: "14", height: "9", rx: "1.5" }],
+      locked
+        ? ["path", { d: "M8 11V7a4 4 0 0 1 8 0v4" }]
+        : ["path", { d: "M8 11V7a4 4 0 0 1 7.5-2" }],
+    ],
+    { size: 14, strokeWidth: 2 }
   );
 }
 
@@ -1540,7 +1558,7 @@ function clearRollLog() {
 // ---------- roster (GM-managed index of characters) ----------
 
 function defaultRosterEntry(id) {
-  return { id, access: "gm", ownerId: null };
+  return { id, access: "gm", ownerId: null, locked: false };
 }
 
 function normalizeRoster(raw) {
@@ -1551,11 +1569,16 @@ function normalizeRoster(raw) {
       id: r.id,
       access: ["gm", "everyone", "assigned"].includes(r.access) ? r.access : "gm",
       ownerId: typeof r.ownerId === "string" ? r.ownerId : null,
+      locked: !!r.locked,
     }));
 }
 
 function getRoster() {
   return normalizeRoster(roomMeta[ROOM_KEYS.roster]);
+}
+
+function rosterEntryFor(id) {
+  return getRoster().find((r) => r.id === id) || null;
 }
 
 function updateRoster(mutator) {
@@ -1824,7 +1847,6 @@ function renderMySheetTab() {
 
   if (accessibleIds.length > 1) {
     const pickerWrap = el("div", { class: "section" });
-    pickerWrap.appendChild(el("div", { class: "hint" }, t("mySheetPickerHint")));
     const picker = el("div", { class: "sheet-picker" });
     accessibleIds.forEach((id) => {
       const ch = getCharacter(id);
@@ -1840,8 +1862,24 @@ function renderMySheetTab() {
     wrap.appendChild(pickerWrap);
   }
 
+  const entry = rosterEntryFor(activeCharacterId);
+  const locked = !isGM() && !!entry && entry.locked;
+  if (locked) {
+    wrap.appendChild(
+      el("div", { class: "locked-banner" }, [lockIcon(true), el("span", { text: t("lockedBanner") })])
+    );
+  }
+
   const { character, save } = bindCharacter(activeCharacterId);
-  wrap.appendChild(renderCharacterSheet(character, save));
+  // A padlocked <div> (rather than sprinkling `disabled` through every input across the whole
+  // sheet — name, tags, tracks, backpack, notes, theme cards...) blocks pointer AND keyboard
+  // interaction with everything inside in one place, and never goes stale as the sheet grows new
+  // editable bits. Only applies to a non-GM viewer: the GM's own Roster editor for this same
+  // character renders unlocked regardless (see renderRosterTab), since locking only restricts
+  // players.
+  const sheetBox = el("div", locked ? { inert: "" } : {});
+  sheetBox.appendChild(renderCharacterSheet(character, save));
+  wrap.appendChild(sheetBox);
   return wrap;
 }
 
@@ -3156,6 +3194,21 @@ function renderRosterTab() {
         accessOptions
       )
     );
+
+    const lockBtn = el("button", {
+      class: "icon-btn-round roster-lock-btn" + (entry.locked ? " active" : ""),
+      title: entry.locked ? t("lockToggleLock") : t("lockToggleUnlock"),
+      "aria-label": entry.locked ? t("lockToggleLock") : t("lockToggleUnlock"),
+      onclick: () => {
+        updateRoster((r) => {
+          const target = r.find((x) => x.id === entry.id);
+          if (target) target.locked = !target.locked;
+        });
+        refreshTabContent();
+      },
+    });
+    lockBtn.appendChild(lockIcon(entry.locked));
+    row.appendChild(lockBtn);
 
     const expanded = expandedRosterId === entry.id;
     row.appendChild(

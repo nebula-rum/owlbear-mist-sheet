@@ -1109,6 +1109,28 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 
 .sheet-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* Shown to a player whose active character the GM has locked from the Roster tab (see
+   .roster-lock-btn); the sheet itself renders inside an `inert` container right below this, which
+   is what actually blocks the edits — this banner is just telling the player why. */
+.locked-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--parchment));
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85em;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.locked-banner svg { flex-shrink: 0; }
+
+/* `inert` already blocks pointer/keyboard interaction (see renderMySheetTab) — this just makes
+   that state visible, since not every browser dims inert content on its own. */
+[inert] { opacity: 0.7; cursor: not-allowed; }
+
 /* ---------- Company tab (shared Company Theme) ---------- */
 
 .company-card {
@@ -1152,6 +1174,9 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   font-size: 0.82em;
   max-width: 140px;
 }
+
+.roster-lock-btn.active { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.roster-lock-btn.active:hover { background: color-mix(in srgb, var(--danger) 28%, transparent); }
 
 .roster-editor {
   border-top: 2px dashed var(--border-soft);
