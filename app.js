@@ -958,6 +958,21 @@ const expandedBackgroundIds = new Set(); // which characters have their Backgrou
 const expandedThemeExtraIds = new Set(); // which Theme cards have their "Show more" (Type/Quest) open
 let partyPlayers = []; // [{id, name, role, metadata}] — everyone except self
 
+// Whether a non-GM viewer should see this character's sheet as locked (see the Roster tab's
+// padlock toggle, entry.locked). Deliberately stateless — computed fresh from the roster every
+// time, rather than a module flag set once per top-level render — because several handlers in
+// this file patch just one piece of DOM back in (replaceThemeCard() swaps a single theme card,
+// not the whole tab) instead of going through renderMySheetTab() again; a flag that was only
+// "true for the duration of one top-level render" would already have reset by the time one of
+// those narrower rerenders ran, silently unlocking the sheet again on the very first tick/burn.
+// The GM's own Roster editor is never locked for the same reason isGM() already gates the whole
+// Roster tab: this always returns false while isGM() is true, no separate reset needed.
+function isCharacterLocked(characterId) {
+  if (isGM()) return false;
+  const entry = rosterEntryFor(characterId);
+  return !!entry && entry.locked;
+}
+
 // ---------- Total Power tally (scratch state for "the upcoming roll", not synced) ----------
 // Ticking a tag/status to count it toward Potere is a per-viewer, per-roll working note, not
 // real character data — like flippedThemeIds/expandedThemeExtraIds below, it resets on reload
@@ -1862,30 +1877,21 @@ function renderMySheetTab() {
     wrap.appendChild(pickerWrap);
   }
 
-  const entry = rosterEntryFor(activeCharacterId);
-  const locked = !isGM() && !!entry && entry.locked;
-  if (locked) {
+  if (isCharacterLocked(activeCharacterId)) {
     wrap.appendChild(
       el("div", { class: "locked-banner" }, [lockIcon(true), el("span", { text: t("lockedBanner") })])
     );
   }
 
   const { character, save } = bindCharacter(activeCharacterId);
-  // A padlocked <div> (rather than sprinkling `disabled` through every input across the whole
-  // sheet — name, tags, tracks, backpack, notes, theme cards...) blocks pointer AND keyboard
-  // interaction with everything inside in one place, and never goes stale as the sheet grows new
-  // editable bits. Only applies to a non-GM viewer: the GM's own Roster editor for this same
-  // character renders unlocked regardless (see renderRosterTab), since locking only restricts
-  // players.
-  const sheetBox = el("div", locked ? { inert: "" } : {});
-  sheetBox.appendChild(renderCharacterSheet(character, save));
-  wrap.appendChild(sheetBox);
+  wrap.appendChild(renderCharacterSheet(character, save));
   return wrap;
 }
 
 // ---------- Character sheet (reused for Hero and the GM's Roster editor) ----------
 
 function renderCharacterSheet(character, save) {
+  const locked = isCharacterLocked(character.id);
   const wrap = el("div");
 
   wrap.appendChild(renderNameAndBackgroundSection(character, save));
@@ -1902,6 +1908,7 @@ function renderCharacterSheet(character, save) {
       el("button", {
         class: "add-theme-card",
         text: t("addTheme", character.themes.length),
+        disabled: locked || undefined,
         onclick: () => {
           character.themes.push(defaultTheme());
           save();
@@ -1927,6 +1934,7 @@ function renderCharacterSheet(character, save) {
 // Power chip + manual modifier + reset, between the name and the Background toggle.
 
 function renderNameAndBackgroundSection(character, save) {
+  const locked = isCharacterLocked(character.id);
   const isOpen = expandedBackgroundIds.has(character.id);
   const section = el("div", { class: "section sheet-header" });
 
@@ -1937,6 +1945,7 @@ function renderNameAndBackgroundSection(character, save) {
       type: "text",
       placeholder: t("characterNamePlaceholder"),
       value: character.name,
+      disabled: locked || undefined,
       oninput: (e) => { character.name = e.target.value; save(); },
     })
   );
@@ -2069,7 +2078,7 @@ function renderColorSwatchPicker(currentColor, onSelect) {
   return wrap;
 }
 
-function renderCategoryPicker(theme, save, rerender) {
+function renderCategoryPicker(theme, save, rerender, locked) {
   const cats = getCampaign().themeCategories;
   if (cats.length === 0) {
     return el("div", { class: "category-picker" }, [
@@ -2094,6 +2103,7 @@ function renderCategoryPicker(theme, save, rerender) {
     "select",
     {
       class: "category-select " + categoryColorClass(theme.categoryId),
+      disabled: locked || undefined,
       onchange: (e) => {
         theme.categoryId = e.target.value;
         save();
@@ -2112,7 +2122,7 @@ function renderCategoryPicker(theme, save, rerender) {
 // uses the standard CSS-grid "replicated value" auto-grow trick: a hidden ::after with the same
 // text drives the grid row's height, and the real <textarea> (which does wrap) sits on top of
 // it, no JS height-measuring needed.
-function renderThemeTitlePill(theme, save, rerender) {
+function renderThemeTitlePill(theme, save, rerender, locked) {
   const pill = el("div", { class: "theme-title-pill" + (theme.titleBurned ? " burned" : "") });
 
   const flameBtn = el("button", {
@@ -2145,6 +2155,7 @@ function renderThemeTitlePill(theme, save, rerender) {
         class: "theme-title-input",
         rows: "1",
         placeholder: t("themeTitlePlaceholder"),
+        disabled: locked || undefined,
         oninput: (e) => {
           theme.title = e.target.value;
           wrap.setAttribute("data-replicated-value", e.target.value);
@@ -2175,6 +2186,7 @@ function renderThemeTitlePill(theme, save, rerender) {
 }
 
 function renderThemeFront(character, save, theme, cardNode) {
+  const locked = isCharacterLocked(character.id);
   const face = el("div", { class: "theme-face front " + categoryColorClass(theme.categoryId) });
 
   // Full-width banner: category color says which category this is (the picker itself now lives
@@ -2188,6 +2200,7 @@ function renderThemeFront(character, save, theme, cardNode) {
       type: "text",
       placeholder: t("themeTypePlaceholder"),
       value: theme.type,
+      disabled: locked || undefined,
       oninput: (e) => { theme.type = e.target.value; save(); },
     })
   );
@@ -2197,6 +2210,7 @@ function renderThemeFront(character, save, theme, cardNode) {
     class: "icon-btn-round",
     title: t("addPower"),
     "aria-label": t("addPower"),
+    disabled: locked || undefined,
     onclick: () => {
       theme.power.push({ id: uid(), text: "", burned: false });
       save();
@@ -2211,7 +2225,7 @@ function renderThemeFront(character, save, theme, cardNode) {
     class: "icon-btn-round",
     title: t("addWeakness"),
     "aria-label": t("addWeakness"),
-    disabled: weaknessAtCap ? "disabled" : undefined,
+    disabled: locked || weaknessAtCap ? "disabled" : undefined,
     onclick: () => {
       if (theme.weakness.length >= 3) return;
       theme.weakness.push({ id: uid(), text: "", burned: false });
@@ -2230,13 +2244,21 @@ function renderThemeFront(character, save, theme, cardNode) {
 
   const body = el("div", { class: "theme-face-body" });
 
-  body.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme)));
+  body.appendChild(renderThemeTitlePill(theme, save, () => replaceThemeCard(character, save, theme), locked));
 
   body.appendChild(
-    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), { hideHeader: true, tickPower: true })
+    renderTagList(theme, "power", false, save, () => replaceThemeCard(character, save, theme), {
+      hideHeader: true,
+      tickPower: true,
+      readOnly: locked,
+    })
   );
   body.appendChild(
-    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), { hideHeader: true, tickPower: true })
+    renderTagList(theme, "weakness", true, save, () => replaceThemeCard(character, save, theme), {
+      hideHeader: true,
+      tickPower: true,
+      readOnly: locked,
+    })
   );
 
   // Quest is secondary info (checked occasionally, not every beat of play), so in the compact
@@ -2267,6 +2289,7 @@ function renderThemeFront(character, save, theme, cardNode) {
       el("textarea", {
         class: "mission-text",
         placeholder: t("questionPlaceholder"),
+        disabled: locked || undefined,
         oninput: (e) => { theme.question = e.target.value; save(); },
       }, theme.question)
     );
@@ -2279,8 +2302,10 @@ function renderThemeFront(character, save, theme, cardNode) {
 
 // Generic tag-list renderer, used for both personal Theme tags and the shared Company
 // Theme's tags. `owner` just needs an array at owner[kind]. When `readOnly` is set, tag
-// text/add/remove are locked but the burn/cross toggle stays live (used for the Company
-// Theme, which non-GM players may only "activate" a tag on, not edit its wording). The
+// text/add/remove are locked but the burn/cross toggle (and, when `tickPower` is also set, the
+// tick-toward-Total-Power box) stay live — used both for the Company Theme (non-GM players may
+// only "activate" a tag on, not edit its wording) and for a GM-locked personal sheet (see
+// isCharacterLocked — players can still tick/burn for a roll, just not rename/add/remove). The
 // section title and its inline "+" button are rendered here too, via `opts.title`.
 function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
   const readOnly = !!opts.readOnly;
@@ -2366,28 +2391,32 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
         )
       );
       pill.appendChild(textWrap);
+    }
 
-      // Personal Theme tags tick toward Total Power (+1 Power / -1 Weakness, +3 to burn a Power
-      // tag); the shared Company Theme's tags don't — different fiction (crossed on use, never
-      // burned for Potere) and no per-character Potere tally to feed there. See
-      // computeTotalPower(). Right-aligned: sits at the end of the pill, right before delete —
-      // matching every other tick box in this app (and now the Theme title's too).
-      if (opts.tickPower) {
-        pill.appendChild(
-          tickToggle(
-            rollSelection.has(tag.id),
-            kind === "weakness" ? t("tickWeaknessTitle") : t("tickPowerTitle"),
-            () => {
-              if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
-              else rollSelection.add(tag.id);
-              // Same reasoning as the Theme-title tick: this changes the Total Power number in
-              // the header, which the narrower replaceThemeCard() rerender() never touches.
-              refreshTabContent();
-            }
-          )
-        );
-      }
+    // Personal Theme tags tick toward Total Power (+1 Power / -1 Weakness, +3 to burn a Power
+    // tag); the shared Company Theme's tags don't — different fiction (crossed on use, never
+    // burned for Potere) and no per-character Potere tally to feed there. See
+    // computeTotalPower(). Right-aligned: sits at the end of the pill, right before delete —
+    // matching every other tick box in this app (and now the Theme title's too). Rendered
+    // regardless of readOnly (unlike the text box and delete button below) — a locked personal
+    // sheet still needs to be usable for rolling, only renaming/adding/removing is restricted.
+    if (opts.tickPower) {
+      pill.appendChild(
+        tickToggle(
+          rollSelection.has(tag.id),
+          kind === "weakness" ? t("tickWeaknessTitle") : t("tickPowerTitle"),
+          () => {
+            if (rollSelection.has(tag.id)) rollSelection.delete(tag.id);
+            else rollSelection.add(tag.id);
+            // Same reasoning as the Theme-title tick: this changes the Total Power number in
+            // the header, which the narrower replaceThemeCard() rerender() never touches.
+            refreshTabContent();
+          }
+        )
+      );
+    }
 
+    if (!readOnly) {
       const tagTrash = el("button", {
         class: "chip-trash",
         title: t("removeTagTitle"),
@@ -2411,6 +2440,7 @@ function renderTagList(owner, kind, singleWeakness, save, rerender, opts = {}) {
 }
 
 function renderThemeBack(character, save, theme, cardNode) {
+  const locked = isCharacterLocked(character.id);
   const face = el("div", { class: "theme-face back " + categoryColorClass(theme.categoryId) });
 
   // Same banner as the front, for visual continuity — just the flip button on it (add-Power/
@@ -2437,6 +2467,7 @@ function renderThemeBack(character, save, theme, cardNode) {
     el("textarea", {
       class: "special-text",
       placeholder: t("specialPlaceholder"),
+      disabled: locked || undefined,
       oninput: (e) => { theme.special = e.target.value; save(); },
     }, theme.special)
   );
@@ -2444,11 +2475,12 @@ function renderThemeBack(character, save, theme, cardNode) {
   // Category picker moved here (off the front, out of the way) and the delete button, sharing
   // the bottom row.
   const footer = el("div", { class: "theme-back-footer" });
-  footer.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme)));
+  footer.appendChild(renderCategoryPicker(theme, save, () => replaceThemeCard(character, save, theme), locked));
   const deleteBtn = el("button", {
     class: "btn danger small icon-only",
     title: t("removeTheme"),
     "aria-label": t("removeTheme"),
+    disabled: locked || undefined,
     onclick: () => {
       showConfirmDialog(t("removeThemeConfirm"), () => {
         character.themes = character.themes.filter((th) => th.id !== theme.id);
@@ -2511,6 +2543,7 @@ function renderTracksBlock(owner, save, rerender, opts = {}) {
 // ---------- Backpack ----------
 
 function renderBackpackSection(character, save) {
+  const locked = isCharacterLocked(character.id);
   const section = el("div", { class: "section" });
   section.appendChild(
     el("div", { class: "section-title" }, [
@@ -2518,6 +2551,7 @@ function renderBackpackSection(character, save) {
       el("button", {
         class: "btn small add-btn",
         text: t("addItem"),
+        disabled: locked || undefined,
         onclick: () => {
           character.backpack.push({ id: uid(), text: "", burned: false });
           save();
@@ -2566,6 +2600,7 @@ function renderBackpackSection(character, save) {
           class: "tag-text-input",
           rows: "1",
           placeholder: t("itemPlaceholder"),
+          disabled: locked || undefined,
           oninput: (e) => {
             item.text = e.target.value;
             itemTextWrap.setAttribute("data-replicated-value", e.target.value);
@@ -2588,6 +2623,7 @@ function renderBackpackSection(character, save) {
       class: "chip-trash",
       title: t("removeItem"),
       "aria-label": t("removeItem"),
+      disabled: locked || undefined,
       onclick: () => {
         showConfirmDialog(t("removeItemConfirm"), () => {
           character.backpack = character.backpack.filter((i) => i.id !== item.id);
@@ -2611,6 +2647,7 @@ function renderBackpackSection(character, save) {
 // color (campaign.tagColor / campaign.statusColor), set on the Settings tab.
 
 function renderActiveTagsSection(character, save) {
+  const locked = isCharacterLocked(character.id);
   const campaign = getCampaign();
   const tagColorClass = "color-" + campaign.tagColor;
   const statusColorClass = "color-" + campaign.statusColor;
@@ -2620,6 +2657,7 @@ function renderActiveTagsSection(character, save) {
   const addTagBtn = el("button", {
     class: "btn small add-btn",
     text: t("addActiveTag"),
+    disabled: locked || undefined,
     onclick: () => {
       character.tags.push({ id: uid(), text: "", polarity: "positive" });
       save();
@@ -2629,6 +2667,7 @@ function renderActiveTagsSection(character, save) {
   const addStatusBtn = el("button", {
     class: "btn small add-btn",
     text: t("addStatus"),
+    disabled: locked || undefined,
     onclick: () => {
       character.statuses.push({ id: uid(), name: "", boxes: [false, false, false, false, false, false] });
       save();
@@ -2651,6 +2690,7 @@ function renderActiveTagsSection(character, save) {
         type: "text",
         value: tag.text,
         placeholder: t("activeTagPlaceholder"),
+        disabled: locked || undefined,
         oninput: (e) => { tag.text = e.target.value; save(); },
       })
     );
@@ -2683,6 +2723,7 @@ function renderActiveTagsSection(character, save) {
       class: "chip-trash",
       title: t("removeActiveTag"),
       "aria-label": t("removeActiveTag"),
+      disabled: locked || undefined,
       onclick: () => {
         showConfirmDialog(t("removeActiveTagConfirm"), () => {
           character.tags = character.tags.filter((tg) => tg.id !== tag.id);
@@ -2706,6 +2747,7 @@ function renderActiveTagsSection(character, save) {
         class: "status-name-input",
         value: s.name,
         placeholder: t("statusPlaceholder"),
+        disabled: locked || undefined,
         oninput: (e) => { s.name = e.target.value; save(); },
       })
     );
@@ -2748,6 +2790,7 @@ function renderActiveTagsSection(character, save) {
       class: "chip-trash",
       title: t("removeStatus"),
       "aria-label": t("removeStatus"),
+      disabled: locked || undefined,
       onclick: () => {
         showConfirmDialog(t("removeStatusConfirm"), () => {
           character.statuses = character.statuses.filter((x) => x.id !== s.id);
@@ -3245,6 +3288,9 @@ function renderRosterTab() {
 
     if (expanded) {
       const { character: liveCharacter, save } = bindCharacter(entry.id);
+      // The GM's own editor is never subject to a character's lock — only players are. This is
+      // automatic, not something enforced here: isCharacterLocked() always returns false while
+      // isGM() is true, and the Roster tab (this whole function) only ever renders for the GM.
       const editorBox = el("div", { class: "roster-editor" });
       editorBox.appendChild(renderCharacterSheet(liveCharacter, save));
       rowWrap.appendChild(editorBox);

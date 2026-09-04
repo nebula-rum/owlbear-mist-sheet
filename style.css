@@ -91,6 +91,12 @@ input:focus, textarea:focus, select:focus {
   outline-offset: 1px;
 }
 
+/* A GM-locked character sheet (see sheetLocked in app.js) disables specific inputs/buttons rather
+   than the whole sheet at once, so this needs to be a generic base rule rather than something
+   scoped to one section. */
+input:disabled, textarea:disabled, select:disabled { opacity: 0.55; cursor: not-allowed; }
+button:disabled { cursor: not-allowed; }
+
 textarea { resize: vertical; width: 100%; line-height: 1.4; }
 
 /* ---------- Top bar ---------- */
@@ -1110,8 +1116,10 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
 .sheet-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* Shown to a player whose active character the GM has locked from the Roster tab (see
-   .roster-lock-btn); the sheet itself renders inside an `inert` container right below this, which
-   is what actually blocks the edits — this banner is just telling the player why. */
+   .roster-lock-btn). The sheet below it stays interactive for gameplay (ticking tags/statuses,
+   burning, track/status boxes, Roll) — only structural edits (add/remove, category, renaming,
+   everything but Background/Notes) get an actual `disabled` attribute (see sheetLocked in app.js
+   and the generic input/textarea/select/button :disabled rule near the top of this file). */
 .locked-banner {
   display: flex;
   align-items: center;
@@ -1126,10 +1134,6 @@ textarea { resize: vertical; width: 100%; line-height: 1.4; }
   margin-bottom: 12px;
 }
 .locked-banner svg { flex-shrink: 0; }
-
-/* `inert` already blocks pointer/keyboard interaction (see renderMySheetTab) — this just makes
-   that state visible, since not every browser dims inert content on its own. */
-[inert] { opacity: 0.7; cursor: not-allowed; }
 
 /* ---------- Company tab (shared Company Theme) ---------- */
 
