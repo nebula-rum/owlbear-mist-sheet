@@ -4,8 +4,8 @@
 > on 2026-08-31, so a Claude Code session working from a local clone of this repo has the
 > same build history available without needing that Project. This is the append-only,
 > pass-by-pass record of every design decision, bug, and UI iteration behind this
-> extension — read `../CLAUDE.md` first for a concise orientation; come here when you need
-> the "why" behind something that looks odd, or before assuming something is an oversight.
+> extension — come here when you need the "why" behind something that looks odd, or
+> before assuming something is an oversight.
 >
 > The first few sections below (through "Real deployment log") also describe the broader
 > Owlbear Rodeo tabletop setup this extension was originally built for — Legend in the
